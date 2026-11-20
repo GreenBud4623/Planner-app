@@ -9,8 +9,8 @@
   const STORAGE_KEY = "planner.v1";
   const PRIORITY_RANK = { high: 0, med: 1, low: 2 };
   const PRIORITY_LABEL = { high: "High", med: "Medium", low: "Low" };
-  const TYPES = ["task", "homework", "longterm", "recover"];
-  const CLASS_TYPES = ["homework", "recover"]; // item types linked to a class
+  const TYPES = ["task", "homework", "longterm", "recover", "test"];
+  const CLASS_TYPES = ["homework", "recover", "test"]; // item types linked to a class
   const DATELESS_TYPES = ["longterm", "recover"]; // date is optional for these
   const CLASS_COLORS = ["#4f46e5", "#0891b2", "#16a34a", "#d97706", "#dc2626", "#db2777", "#7c3aed", "#64748b"];
   const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -121,6 +121,8 @@
       className: CLASS_TYPES.includes(type) && typeof t.className === "string" ? t.className.slice(0, 80) : "",
       // for "recover": the date of the lesson that was missed
       missedDate: type === "recover" && isISO(t.missedDate) ? t.missedDate : "",
+      // for "test": the mark you got, written after the test
+      grade: type === "test" && typeof t.grade === "string" ? t.grade.slice(0, 20) : "",
     };
   }
 
@@ -171,6 +173,8 @@
     fTime: $("fTime"), fNotes: $("fNotes"), fRemind: $("fRemind"), remindField: $("remindField"),
     fClass: $("fClass"), classField: $("classField"), deleteBtn: $("deleteBtn"),
     fMissed: $("fMissed"), missedField: $("missedField"),
+    fGrade: $("fGrade"), gradeField: $("gradeField"), prioField: $("prioField"), fNotesLabel: $("fNotesLabel"),
+    testSections: $("testSections"), testBadge: $("testBadge"),
     classActions: $("classActions"), caTitle: $("caTitle"), caWhen: $("caWhen"),
     classSheet: $("classSheet"), classForm: $("classForm"), classSheetTitle: $("classSheetTitle"),
     cName: $("cName"), classNames: $("classNames"), cDays: $("cDays"), cDaysLabel: $("cDaysLabel"),
@@ -265,6 +269,8 @@
     const li = document.createElement("li");
     li.className = "task" + (t.done ? " done" : "");
     li.dataset.priority = t.priority;
+    li.dataset.type = t.type;
+    if (t.type === "test" && t.date && dayDiff(t.date) < 0) li.classList.add("test-past");
     li.innerHTML = `
       <button class="check" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -274,7 +280,9 @@
         <div class="task-meta"></div>
       </button>`;
     const check = li.querySelector(".check");
-    check.setAttribute("aria-label", t.done ? `Mark "${t.title}" as not done` : `Mark "${t.title}" as done`);
+    check.setAttribute("aria-label", t.type === "test"
+      ? (t.done ? `Mark "${t.title}" as not studied yet` : `Mark "${t.title}" as studied and ready`)
+      : (t.done ? `Mark "${t.title}" as not done` : `Mark "${t.title}" as done`));
     check.setAttribute("aria-pressed", String(t.done));
     check.addEventListener("click", () => toggleDone(t.id));
 
@@ -288,8 +296,18 @@
       if (t.type === "recover" && t.missedDate) add(`Missed ${relDay(t.missedDate)}`);
     } else if (t.type === "longterm") {
       add("Long-term", "tag tag-long");
+    } else if (t.type === "test") {
+      const tag = add("🧪 " + (t.className || "Test"), "tag");
+      tag.style.setProperty("--tag", classColor(t.className));
+      const diff = dayDiff(t.date);
+      if (diff >= 0) add(diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : `In ${diff} days`, "countdown" + (diff <= 1 ? " soon" : diff <= 3 ? " near" : ""));
+      if (opts.showDate && diff > 1) add(fmtShort.format(fromISO(t.date)));
+      if (opts.showDate && diff < 0) add(cap(relDay(t.date)));
+      if (t.grade) add(`Grade: ${t.grade}`, "grade");
+      else if (diff < 0 && opts.showDate) add("Tap to add your grade", "muted-hint");
+      if (t.done && diff >= 0) add("Ready ✓", "ready");
     }
-    if (opts.showDate && t.date) {
+    if (opts.showDate && t.date && t.type !== "test") {
       const diff = dayDiff(t.date);
       const word = t.type === "longterm" ? "Deadline" : t.type === "homework" ? "Due" : t.type === "recover" ? "Recover by" : "";
       if (!t.done && diff < 0) add(`${-diff} day${diff < -1 ? "s" : ""} late`, "late");
@@ -300,7 +318,8 @@
     if (t.time) add("🕒 " + formatTime(t.time) + (isNative && t.remind !== null && !t.done ? " 🔔" : ""));
     if (!opts.showDate && t.type === "longterm") add("Deadline");
     if (!opts.showDate && t.type === "recover") add("Recover by today");
-    if (t.priority !== "med" || t.type === "task") add(PRIORITY_LABEL[t.priority] + " priority");
+    if (t.type !== "test" && (t.priority !== "med" || t.type === "task")) add(PRIORITY_LABEL[t.priority] + " priority");
+    meta.querySelectorAll("span:empty").forEach((x) => x.remove());
 
     if (t.notes) {
       const n = document.createElement("div");
@@ -333,10 +352,13 @@
     document.querySelectorAll(".tab").forEach((b) => {
       if (b.dataset.tab === tab) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
-    ["plan", "timetable", "homework"].forEach((v) => { $("view-" + v).hidden = v !== tab; });
+    ["plan", "timetable", "homework", "tests"].forEach((v) => { $("view-" + v).hidden = v !== tab; });
     el.weekBar.hidden = tab !== "plan";
     el.todayBtn.hidden = tab !== "plan";
-    $("addBtn").setAttribute("aria-label", tab === "timetable" ? "Add class" : tab === "homework" ? "Add homework" : "Add task");
+    $("addBtn").setAttribute("aria-label", { timetable: "Add class", homework: "Add homework", tests: "Add test" }[tab] || "Add task");
+    const soonTests = state.tasks.filter((t) => t.type === "test" && !t.done && t.date && dayDiff(t.date) >= 0 && dayDiff(t.date) <= 2).length;
+    el.testBadge.hidden = soonTests === 0;
+    el.testBadge.textContent = String(soonTests);
 
     const pastDue = pastDueItems().length;
     el.hwBadge.hidden = pastDue === 0;
@@ -345,6 +367,7 @@
     renderHwPrompts();
     if (tab === "plan") { renderWeek(); renderDay(); }
     else if (tab === "timetable") renderTimetable();
+    else if (tab === "tests") renderTests();
     else renderHomework();
   }
 
@@ -497,7 +520,7 @@
   // ---------- Rendering: Homework & long-term ----------
   function pastDueItems() {
     const today = todayISO();
-    return state.tasks.filter((t) => !t.done && t.date && t.date < today);
+    return state.tasks.filter((t) => t.type !== "test" && !t.done && t.date && t.date < today);
   }
 
   function renderHomework() {
@@ -510,7 +533,7 @@
     const recover = state.tasks.filter((t) => t.type === "recover" && !t.done && (!t.date || t.date >= today))
       .sort((a, b) => byDate(a, b) || (a.missedDate || "").localeCompare(b.missedDate || ""));
     const doneRecently = state.tasks
-      .filter((t) => t.done && t.type !== "task" && (!t.date || dayDiff(t.date) >= -14))
+      .filter((t) => t.done && ["homework", "longterm", "recover"].includes(t.type) && (!t.date || dayDiff(t.date) >= -14))
       .sort((a, b) => byDate(b, a)).slice(0, 10);
 
     el.hwSections.replaceChildren();
@@ -539,6 +562,49 @@
     section("Homework", homework, "No homework due. 🎉");
     section("Long-term", longterm, "Projects, revision or anything that takes a while. Tap + and pick Long-term.");
     if (doneRecently.length) section("Done recently", doneRecently, "");
+  }
+
+  // ---------- Rendering: Tests ----------
+  function renderTests() {
+    el.pageTitle.textContent = "Tests";
+    const tests = state.tasks.filter((t) => t.type === "test" && t.date);
+    const byWhen = (a, b) => a.date.localeCompare(b.date) || (a.time || "99:99").localeCompare(b.time || "99:99");
+    const upcoming = tests.filter((t) => dayDiff(t.date) >= 0).sort(byWhen);
+    const thisWeek = upcoming.filter((t) => dayDiff(t.date) <= 7);
+    const later = upcoming.filter((t) => dayDiff(t.date) > 7);
+    const past = tests.filter((t) => dayDiff(t.date) < 0 && dayDiff(t.date) >= -60).sort((a, b) => byWhen(b, a));
+
+    el.testSections.replaceChildren();
+    if (!tests.length) {
+      const card = document.createElement("div");
+      card.className = "hint-card";
+      card.innerHTML = "<strong>No tests yet</strong><p>Tap <strong>+</strong> to add a test. Pick the class and date, write what to study, and get a reminder before it. Tick it when you're ready.</p>";
+      el.testSections.appendChild(card);
+      return;
+    }
+    const section = (title, items, emptyText, cls) => {
+      const sec = document.createElement("section");
+      sec.className = "hw-section" + (cls ? " " + cls : "");
+      const h = document.createElement("h3");
+      h.className = "section-title";
+      h.textContent = title + (items.length ? ` · ${items.length}` : "");
+      sec.appendChild(h);
+      if (items.length) {
+        const ul = document.createElement("ul");
+        ul.className = "tasks";
+        ul.append(...items.map((t) => renderTask(t, { showDate: true })));
+        sec.appendChild(ul);
+      } else {
+        const p = document.createElement("p");
+        p.className = "muted small";
+        p.textContent = emptyText;
+        sec.appendChild(p);
+      }
+      el.testSections.appendChild(sec);
+    };
+    section("Next 7 days", thisWeek, "No tests this week. 🎉", "tests-soon");
+    if (later.length) section("Later", later, "");
+    if (past.length) section("Past tests", past, "", "tests-past");
   }
 
   // ---------- Navigation ----------
@@ -590,44 +656,65 @@
     const type = currentType();
     el.classField.hidden = !CLASS_TYPES.includes(type);
     el.missedField.hidden = type !== "recover";
+    el.gradeField.hidden = type !== "test" || !editingId;
+    el.prioField.hidden = type === "test";
     el.fTitleLabel.innerHTML = type === "homework" ? "Homework" : type === "longterm" ? "Long-term task" :
-      type === "recover" ? "What to recover <em>(optional)</em>" : "Task";
+      type === "recover" ? "What to recover <em>(optional)</em>" : type === "test" ? "Test <em>(topic)</em>" : "Task";
     el.fTitle.placeholder = type === "homework" ? "e.g. Exercises 1–5, page 42" :
       type === "longterm" ? "e.g. History project" :
-      type === "recover" ? "e.g. Copy notes, make-up test" : "What do you need to do?";
-    el.fTitle.required = type !== "recover";
+      type === "recover" ? "e.g. Copy notes, make-up test" :
+      type === "test" ? "e.g. Chapter 3 – Fractions" : "What do you need to do?";
+    el.fTitle.required = !["recover", "test"].includes(type);
     el.fDateLabel.innerHTML = type === "homework" ? "Due date" : type === "longterm" ? "Deadline <em>(optional)</em>" :
-      type === "recover" ? "Recover by <em>(optional)</em>" : "Date";
+      type === "recover" ? "Recover by <em>(optional)</em>" : type === "test" ? "Test date" : "Date";
+    el.fNotesLabel.innerHTML = type === "test" ? "What to study <em>(optional)</em>" : "Notes <em>(optional)</em>";
     el.fDate.required = !DATELESS_TYPES.includes(type);
+    setRemindOptions(type);
+    updateRemindField();
   }
 
-  const sheetTitleFor = (type) => ({ homework: "New homework", longterm: "New long-term task", recover: "Class to recover" }[type] || "New task");
+  const REMIND_OPTIONS = {
+    default: [["0", "At the time"], ["10", "10 minutes before"], ["30", "30 minutes before"], ["60", "1 hour before"], ["1440", "1 day before"], ["off", "No reminder"]],
+    test: [["1440", "The day before"], ["2880", "2 days before"], ["10080", "1 week before"], ["0", "On the morning of the test"], ["off", "No reminder"]],
+  };
+  let remindOptionsFor = "";
+  function setRemindOptions(type) {
+    const key = type === "test" ? "test" : "default";
+    if (remindOptionsFor === key) return;
+    remindOptionsFor = key;
+    const prev = el.fRemind.value;
+    el.fRemind.replaceChildren(...REMIND_OPTIONS[key].map(([v, l]) => new Option(l, v)));
+    el.fRemind.value = REMIND_OPTIONS[key].some(([v]) => v === prev) ? prev : REMIND_OPTIONS[key][0][0];
+  }
+
+  const sheetTitleFor = (type) => ({ homework: "New homework", longterm: "New long-term task", recover: "Class to recover", test: "New test" }[type] || "New task");
 
   function updateRemindField() {
-    el.remindField.hidden = !(isNative && el.fTime.value);
+    el.remindField.hidden = !(isNative && (el.fTime.value || currentType() === "test"));
   }
 
   function openTaskSheet(id = null, preset = {}) {
     editingId = id;
     const t = id ? state.tasks.find((x) => x.id === id) : null;
-    const type = t ? t.type : preset.type || (tab === "homework" ? "homework" : "task");
+    const type = t ? t.type : preset.type || ({ homework: "homework", tests: "test" }[tab] || "task");
     el.form.elements.type.value = type;
     el.sheetTitle.textContent = t ? "Edit" : sheetTitleFor(type);
-    el.fTitle.value = t ? (t.type === "recover" && t.title === recoverTitle(t.className) ? "" : t.title) : "";
+    el.fTitle.value = t ? (t.type === "recover" && t.title === recoverTitle(t.className) ? "" :
+      t.type === "test" && t.title === testTitle(t.className) ? "" : t.title) : "";
+    el.fGrade.value = t ? t.grade : "";
     fillClassSelect(t ? t.className : preset.className);
     el.fMissed.value = t ? t.missedDate : (preset.missedDate || (type === "recover" && el.fClass.value ? lastLessonDate(el.fClass.value) : ""));
     let date = t ? t.date : preset.date;
-    if (!t && !date) date = type === "homework" && el.fClass.value ? nextLessonDate(el.fClass.value, todayISO()) : (tab === "plan" ? selected : todayISO());
+    if (!t && !date) date = (type === "homework" || type === "test") && el.fClass.value ? nextLessonDate(el.fClass.value, todayISO()) : (tab === "plan" ? selected : todayISO());
     if (!t && DATELESS_TYPES.includes(type) && !preset.date) date = "";
     el.fDate.value = date || "";
     el.fTime.value = t ? t.time : "";
     el.fNotes.value = t ? t.notes : "";
     el.form.elements.priority.value = t ? t.priority : "med";
-    el.fRemind.value = t ? (t.remind === null ? "off" : String(t.remind)) : "0";
-    if (!el.fRemind.value) el.fRemind.value = "0";
     el.deleteBtn.hidden = !t;
-    updateTypeFields();
-    updateRemindField();
+    updateTypeFields(); // also sets the reminder choices for this type
+    el.fRemind.value = t ? (t.remind === null ? "off" : String(t.remind)) : (type === "test" ? "1440" : "0");
+    if (!el.fRemind.value) el.fRemind.value = el.fRemind.options[0].value;
     el.sheet.showModal();
     if (!t) setTimeout(() => el.fTitle.focus(), 50);
   }
@@ -638,6 +725,7 @@
     const type = currentType();
     let title = el.fTitle.value.trim();
     if (!title && type === "recover") title = recoverTitle(el.fClass.value);
+    if (!title && type === "test") title = testTitle(el.fClass.value);
     if (!title) { el.fTitle.focus(); return; }
     if (!DATELESS_TYPES.includes(type) && !el.fDate.value) { el.fDate.focus(); return; }
     const data = {
@@ -645,9 +733,10 @@
       title,
       date: el.fDate.value || "",
       time: el.fTime.value || "",
-      priority: el.form.elements.priority.value || "med",
+      priority: type === "test" ? "high" : (el.form.elements.priority.value || "med"),
       notes: el.fNotes.value.trim(),
-      remind: el.fTime.value && el.fRemind.value !== "off" ? Number(el.fRemind.value) : null,
+      remind: (el.fTime.value || type === "test") && el.fRemind.value !== "off" ? Number(el.fRemind.value) : null,
+      grade: type === "test" ? el.fGrade.value.trim() : "",
       className: CLASS_TYPES.includes(type) ? el.fClass.value : "",
       missedDate: type === "recover" ? el.fMissed.value : "",
     };
@@ -661,9 +750,9 @@
     closeTaskSheet();
     if (tab === "plan" && data.date) selectDate(data.date); else render();
     if (!editingId && tab === "plan" && type !== "task") {
-      toast(type === "homework" ? "Added to Homework" : type === "recover" ? "Added to To recover" : "Added to Long-term");
+      toast({ homework: "Added to Homework", recover: "Added to To recover", test: "Added to Tests" }[type] || "Added to Long-term");
     }
-    if (data.time && data.remind !== null) ensureNotificationPermission();
+    if ((data.time || type === "test") && data.remind !== null) ensureNotificationPermission();
   }
 
   function deleteTask(id) {
@@ -752,6 +841,7 @@
     el.caWhen.textContent = `${cap(relDay(selected))} · ${formatTime(c.start)}–${formatTime(c.end)}${c.room ? " · " + c.room : ""}`;
     el.classActions.showModal();
   }
+  function testTitle(name) { return name ? `${name} test` : "Test"; }
   function recoverTitle(name) { return name ? `Catch up on ${name}` : "Catch up on a missed class"; }
   function addRecover(cls, missedDate, notes = "") {
     state.tasks.push(normalizeTask({
@@ -906,7 +996,7 @@
   // ---------- Backup ----------
   const backupName = () => `planner-backup-${todayISO()}.json`;
   const backupJSON = () =>
-    JSON.stringify({ app: "planner", version: 3, exportedAt: new Date().toISOString(), ...state }, null, 2);
+    JSON.stringify({ app: "planner", version: 4, exportedAt: new Date().toISOString(), ...state }, null, 2);
 
   async function exportBackup() {
     if (Files) {
@@ -974,7 +1064,7 @@
   }
 
   function clearCompleted() {
-    const kept = state.tasks.filter((t) => !t.done);
+    const kept = state.tasks.filter((t) => !t.done || t.type === "test"); // tests keep their grades
     const removed = state.tasks.length - kept.length;
     if (!removed) { toast("No completed tasks"); return; }
     if (!confirm(`Delete ${removed} completed item${removed > 1 ? "s" : ""}?`)) return;
@@ -992,9 +1082,17 @@
     return (h & 0x7fffffff) || 1;
   }
 
-  function reminderAt(t) { return atTime(t.date, t.time).getTime() - t.remind * 60000; }
+  function reminderAt(t) {
+    // Tests without a time: day-before reminders come in the evening, "on the day" in the morning
+    const base = t.time || (t.type === "test" ? (t.remind === 0 ? "07:30" : "18:00") : "09:00");
+    return atTime(t.date, base).getTime() - t.remind * 60000;
+  }
 
   function reminderBody(t) {
+    if (t.type === "test") {
+      const when = { 0: "Today", 1440: "Tomorrow", 2880: "In 2 days", 10080: "In 1 week" }[t.remind] || cap(relDay(t.date));
+      return `${t.className ? t.className + " test" : "Test"} · ${when}${t.time ? " at " + formatTime(t.time) : ""}${t.notes ? " · " + t.notes.slice(0, 60) : ""}`;
+    }
     const when = formatTime(t.time);
     const prefix = t.type === "homework" && t.className ? `${t.className} · ` : "";
     if (t.remind === 0) return `${prefix}Now · ${when}`;
@@ -1026,7 +1124,7 @@
     try {
       const now = Date.now();
       const reminders = state.tasks
-        .filter((t) => !t.done && t.date && t.time && t.remind !== null)
+        .filter((t) => !t.done && t.date && (t.time || t.type === "test") && t.remind !== null)
         .map((t) => ({ t, at: reminderAt(t) }))
         .filter((x) => x.at > now + 1000)
         .sort((a, b) => a.at - b.at)
@@ -1185,7 +1283,8 @@
     updateTypeFields();
     if (!editingId) {
       const type = currentType();
-      if (type === "homework" && el.fClass.value) el.fDate.value = nextLessonDate(el.fClass.value, todayISO());
+      if ((type === "homework" || type === "test") && el.fClass.value) el.fDate.value = nextLessonDate(el.fClass.value, todayISO());
+      if (type === "test" && el.fRemind.value === "0") el.fRemind.value = "1440";
       if (DATELESS_TYPES.includes(type)) el.fDate.value = "";
       if (type === "recover" && !el.fMissed.value && el.fClass.value) el.fMissed.value = lastLessonDate(el.fClass.value);
       if (type === "task" && !el.fDate.value) el.fDate.value = tab === "plan" ? selected : todayISO();
@@ -1194,7 +1293,7 @@
   }));
   el.fClass.addEventListener("change", () => {
     if (editingId || !el.fClass.value) return;
-    if (currentType() === "homework") el.fDate.value = nextLessonDate(el.fClass.value, todayISO());
+    if (currentType() === "homework" || currentType() === "test") el.fDate.value = nextLessonDate(el.fClass.value, todayISO());
     if (currentType() === "recover") el.fMissed.value = lastLessonDate(el.fClass.value);
   });
   el.fTime.addEventListener("input", updateRemindField);
@@ -1214,6 +1313,10 @@
     openTaskSheet(null, { type: "recover", className: actionClass.name, missedDate: selected });
   });
   $("caEdit").addEventListener("click", () => { el.classActions.close(); openClassSheet(actionClass.id); });
+  $("caTest").addEventListener("click", () => {
+    el.classActions.close();
+    openTaskSheet(null, { type: "test", className: actionClass.name, date: nextLessonDate(actionClass.name, selected) });
+  });
   $("caClose").addEventListener("click", () => el.classActions.close());
 
   el.hwForm.addEventListener("submit", (e) => { e.preventDefault(); saveHomeworkCheck(); });

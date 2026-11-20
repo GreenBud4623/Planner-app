@@ -73,6 +73,11 @@
       <div id="ttList"></div>
     </section>
 
+    <!-- ===== Tests ===== -->
+    <section id="view-tests" class="view" hidden>
+      <div id="testSections"></div>
+    </section>
+
     <!-- ===== Homework & long-term ===== -->
     <section id="view-homework" class="view" hidden>
       <div id="hwPromptTab" class="hint-card attention" hidden></div>
@@ -97,6 +102,10 @@
       <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10.5L19 8v11.5H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.5 12.5l2.2 2.2 4.6-4.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="hwBadge" class="badge" hidden></span></span>
       <span class="tab-label">Homework</span>
     </button>
+    <button class="tab" type="button" data-tab="tests">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 3.5h6v3H9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.5 11h7M8.5 15h4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span id="testBadge" class="badge badge-soft" hidden></span></span>
+      <span class="tab-label">Tests</span>
+    </button>
   </nav>
 
   <!-- Add / edit task sheet -->
@@ -108,6 +117,7 @@
       <div class="segmented type-seg" role="radiogroup" aria-label="Type">
         <label><input type="radio" name="type" value="task" checked><span>Task</span></label>
         <label><input type="radio" name="type" value="homework"><span>Homework</span></label>
+        <label><input type="radio" name="type" value="test"><span>Test</span></label>
         <label><input type="radio" name="type" value="longterm"><span>Long-term</span></label>
         <label><input type="radio" name="type" value="recover"><span>Recover</span></label>
       </div>
@@ -150,7 +160,12 @@
         </select>
       </label>
 
-      <fieldset class="field">
+      <label id="gradeField" class="field" hidden>
+        <span>Grade <em>(after the test)</em></span>
+        <input id="fGrade" type="text" maxlength="20" inputmode="decimal" autocomplete="off" placeholder="e.g. 9.50">
+      </label>
+
+      <fieldset id="prioField" class="field">
         <legend>Priority</legend>
         <div class="segmented prio-seg">
           <label><input type="radio" name="priority" value="low"><span>Low</span></label>
@@ -160,7 +175,7 @@
       </fieldset>
 
       <label class="field">
-        <span>Notes <em>(optional)</em></span>
+        <span id="fNotesLabel">Notes <em>(optional)</em></span>
         <textarea id="fNotes" name="notes" rows="3" maxlength="2000"></textarea>
       </label>
 
@@ -236,6 +251,7 @@
     <p id="caWhen" class="muted small"></p>
     <div class="menu-list">
       <button id="caHomework" class="menu-item" type="button">📝 Add homework</button>
+      <button id="caTest" class="menu-item" type="button">🧪 Add a test</button>
       <button id="caMissed" class="menu-item" type="button">↺ I missed this class — add to <em>To recover</em></button>
       <button id="caEdit" class="menu-item" type="button">✏️ Edit class</button>
       <button id="caClose" class="menu-item muted-item" type="button">Cancel</button>

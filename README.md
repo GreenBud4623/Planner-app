@@ -8,7 +8,7 @@ A simple, private planner for Android, made for school.
 
 ## Features
 
-The app has three tabs:
+The app has four tabs:
 
 **Planner** shows your day: that day's classes, then your tasks. Swipe the week strip to change weeks. The **+ Homework** button on a class adds homework due at that class's next lesson. Tap a class to add homework, mark it as **missed** (it goes to *To recover*), or edit it.
 
@@ -21,6 +21,8 @@ The app has three tabs:
 - **To recover**: classes you missed and need to catch up on (notes, a make-up test…), with the date you missed and an optional "recover by" date
 - **Homework**: what's due next, by class
 - **Long-term**: projects and other things that take a while, with an optional deadline
+
+**Tests** lists your upcoming tests: the next 7 days first, then later ones, with a countdown ("Tomorrow", "In 3 days"). For each test you add the class, date, optional time, topic and what to study. You get a reminder the day before (or 2 days or a week before, or that morning). Tick a test when you've studied and it shows **Ready ✓**. After the test it moves to **Past tests**, where you can write down your grade. Tests also show on their day in the Planner, and the tab shows a badge when a test is today or tomorrow. You can also tap a class on the Planner and choose **Add a test**.
 
 Also:
 - Tasks with an optional time, a priority (low, medium or high) and notes

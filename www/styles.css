@@ -558,3 +558,31 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .hw-row.is-none .hw-due { opacity: 0.45; }
 .hw-row[data-state="absent"] .hw-text { opacity: 1; }
 .hw-row[data-state="absent"] .hw-text::placeholder { color: var(--muted); }
+
+/* Four tabs */
+.tabbar { grid-template-columns: repeat(4, 1fr); }
+.tab-icon { width: 52px; }
+.badge-soft { background: var(--accent); color: var(--accent-ink); }
+
+/* Type picker: five choices wrap onto two rows on small phones */
+.type-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.type-seg label { flex: 1 1 auto; min-width: 72px; }
+.type-seg span { padding: 9px 10px; }
+
+/* Tests */
+.task-meta .countdown { font-weight: 650; color: var(--muted); }
+.task-meta .countdown.near { color: var(--med); }
+.task-meta .countdown.soon { color: var(--high); }
+.task-meta .grade { font-weight: 700; color: var(--text); }
+.task-meta .ready { font-weight: 650; color: var(--low); }
+.task-meta .muted-hint { font-style: italic; }
+.tests-soon .section-title { color: var(--accent); }
+
+/* Type picker: 3 + 2 even rows */
+.type-seg { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.type-seg label { grid-column: span 2; min-width: 0; }
+.type-seg label:nth-child(n+4) { grid-column: span 3; }
+
+/* A test ticked as "ready" isn't crossed out; past tests show their grade instead of a tick */
+.task.done[data-type="test"] .task-title { text-decoration: none; color: var(--text); }
+.task.test-past .check { visibility: hidden; }
