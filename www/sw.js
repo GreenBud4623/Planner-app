@@ -1,10 +1,11 @@
 // Service worker: caches the app so it opens and works with no internet.
-const CACHE = "planner-v1";
+const CACHE = "planner-v2";
 const FILES = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./vendor/capacitor.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",

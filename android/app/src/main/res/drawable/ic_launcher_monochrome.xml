@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Calendar with a check mark. Themed (monochrome) launcher icon layer. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.55" android:scaleY="0.55" android:pivotX="54" android:pivotY="54">
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+            android:pathData="M34,14a6,6 0 0,1 12,0v6h16v-6a6,6 0 0,1 12,0v6h6a14,14 0 0,1 14,14v52a14,14 0 0,1 -14,14h-52a14,14 0 0,1 -14,-14v-52a14,14 0 0,1 14,-14h6z
+                M28,42v44a2,2 0 0,0 2,2h48a2,2 0 0,0 2,-2v-44z
+                M38,62l9,9l23,-23l6,6l-29,29l-15,-15z" />
+    </group>
+</vector>

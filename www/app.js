@@ -1,5 +1,7 @@
 /* Planner — a private, offline planner.
- * All data is kept in this browser's localStorage on the phone. Nothing is sent anywhere.
+ * All data is kept on the phone (WebView/browser localStorage). Nothing is sent anywhere.
+ * When running as the Android app (Capacitor), it also uses native reminders, haptics,
+ * the back button and file saving.
  */
 (() => {
   "use strict";
@@ -27,6 +29,16 @@
     return fmtTime.format(new Date(2000, 0, 1, h, m));
   }
 
+  // ---------- Native (Android app) bridge ----------
+  const Cap = window.Capacitor;
+  const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
+  const plugin = (name) => (isNative ? Cap.registerPlugin(name) : null);
+  const Notif = plugin("LocalNotifications");
+  const AppPlugin = plugin("App");
+  const Haptics = plugin("Haptics");
+  const Files = plugin("Filesystem");
+  const Share = plugin("Share");
+
   // ---------- Storage ----------
   let memoryFallback = null; // used if localStorage is blocked (e.g. private mode)
 
@@ -48,6 +60,7 @@
       memoryFallback = state;
       toast("Couldn't save — storage is blocked on this browser");
     }
+    scheduleReminderSync();
   }
 
   function isValidTask(t) {
@@ -63,6 +76,8 @@
       time: typeof t.time === "string" && /^\d{2}:\d{2}$/.test(t.time) ? t.time : "",
       priority: PRIORITY_RANK[t.priority] !== undefined ? t.priority : "med",
       notes: typeof t.notes === "string" ? t.notes.slice(0, 2000) : "",
+      // minutes before the task time to remind; null = no reminder
+      remind: Number.isFinite(t.remind) && t.remind >= 0 ? t.remind : null,
       done: !!t.done,
       createdAt: typeof t.createdAt === "number" ? t.createdAt : Date.now(),
     };
@@ -87,6 +102,7 @@
     list: $("taskList"), empty: $("empty"),
     sheet: $("taskSheet"), form: $("taskForm"), sheetTitle: $("sheetTitle"),
     fTitle: $("fTitle"), fDate: $("fDate"), fTime: $("fTime"), fNotes: $("fNotes"),
+    fRemind: $("fRemind"), remindField: $("remindField"),
     deleteBtn: $("deleteBtn"), menu: $("menuSheet"), importFile: $("importFile"), toast: $("toast"),
   };
 
@@ -172,7 +188,7 @@
     li.querySelector(".task-title").textContent = t.title;
     const meta = li.querySelector(".task-meta");
     const bits = [];
-    if (t.time) bits.push("🕒 " + formatTime(t.time));
+    if (t.time) bits.push("🕒 " + formatTime(t.time) + (isNative && t.remind !== null && !t.done ? " 🔔" : ""));
     bits.push(PRIORITY_LABEL[t.priority] + " priority");
     bits.forEach((s) => { const span = document.createElement("span"); span.textContent = s; meta.appendChild(span); });
     if (t.notes) {
@@ -208,7 +224,10 @@
     t.done = !t.done;
     save();
     render();
-    if (t.done && navigator.vibrate) navigator.vibrate(15);
+    if (t.done) {
+      if (Haptics) Haptics.impact({ style: "LIGHT" }).catch(() => {});
+      else if (navigator.vibrate) navigator.vibrate(15);
+    }
   }
 
   function openSheet(id = null) {
@@ -220,12 +239,19 @@
     el.fTime.value = t ? t.time : "";
     el.fNotes.value = t ? t.notes : "";
     el.form.elements.priority.value = t ? t.priority : "med";
+    el.fRemind.value = t ? (t.remind === null ? "off" : String(t.remind)) : "0";
+    if (!el.fRemind.value) el.fRemind.value = "0";
+    updateRemindField();
     el.deleteBtn.hidden = !t;
     el.sheet.showModal();
     if (!t) setTimeout(() => el.fTitle.focus(), 50);
   }
 
   function closeSheet() { el.sheet.close(); editingId = null; }
+
+  function updateRemindField() {
+    el.remindField.hidden = !(isNative && el.fTime.value);
+  }
 
   function saveFromForm() {
     const title = el.fTitle.value.trim();
@@ -236,6 +262,7 @@
       time: el.fTime.value || "",
       priority: el.form.elements.priority.value || "med",
       notes: el.fNotes.value.trim(),
+      remind: el.fTime.value && el.fRemind.value !== "off" ? Number(el.fRemind.value) : null,
     };
     if (editingId) {
       const t = state.tasks.find((x) => x.id === editingId);
@@ -246,6 +273,7 @@
     save();
     closeSheet();
     selectDate(data.date);
+    if (data.time && data.remind !== null) ensureNotificationPermission();
   }
 
   function deleteTask(id) {
@@ -284,19 +312,46 @@
     toast(`Deleted ${removed} task${removed > 1 ? "s" : ""}`);
   }
 
-  function exportBackup() {
-    const blob = new Blob([JSON.stringify({ app: "planner", version: 1, exportedAt: new Date().toISOString(), ...state }, null, 2)],
-      { type: "application/json" });
+  const backupName = () => `planner-backup-${todayISO()}.json`;
+  const backupJSON = () =>
+    JSON.stringify({ app: "planner", version: 1, exportedAt: new Date().toISOString(), ...state }, null, 2);
+
+  async function exportBackup() {
+    if (Files) {
+      try {
+        await Files.writeFile({
+          path: `Planner/${backupName()}`, data: backupJSON(),
+          directory: "DOCUMENTS", encoding: "utf8", recursive: true,
+        });
+        el.menu.close();
+        toast("Saved to Documents › Planner");
+      } catch {
+        shareBackup(); // fall back to the share sheet if the phone won't allow saving there
+      }
+      return;
+    }
+    const blob = new Blob([backupJSON()], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `planner-backup-${todayISO()}.json`;
+    a.download = backupName();
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     el.menu.close();
     toast("Backup file saved");
+  }
+
+  async function shareBackup() {
+    if (!Files || !Share) return;
+    try {
+      const res = await Files.writeFile({ path: backupName(), data: backupJSON(), directory: "CACHE", encoding: "utf8" });
+      el.menu.close();
+      await Share.share({ title: "Planner backup", files: [res.uri] });
+    } catch (e) {
+      if (!/cancel/i.test(String(e && e.message))) toast("Couldn't share the backup");
+    }
   }
 
   function importBackup(file) {
@@ -318,6 +373,109 @@
       }
     };
     reader.readAsText(file);
+  }
+
+  // ---------- Reminders (Android app only) ----------
+  function hashId(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+    return (h & 0x7fffffff) || 1;
+  }
+
+  function reminderAt(t) {
+    const [h, m] = t.time.split(":").map(Number);
+    const d = fromISO(t.date);
+    d.setHours(h, m, 0, 0);
+    return d.getTime() - t.remind * 60000;
+  }
+
+  function reminderBody(t) {
+    const when = formatTime(t.time);
+    if (t.remind === 0) return `Now · ${when}`;
+    if (t.remind === 1440) return `Tomorrow at ${when}`;
+    if (t.remind >= 60) return `In ${t.remind / 60} hour${t.remind > 60 ? "s" : ""} · ${when}`;
+    return `In ${t.remind} minutes · ${when}`;
+  }
+
+  let notifAllowed = false;
+  async function ensureNotificationPermission() {
+    if (!Notif) return false;
+    try {
+      let p = await Notif.checkPermissions();
+      if (p.display === "prompt" || p.display === "prompt-with-rationale") p = await Notif.requestPermissions();
+      notifAllowed = p.display === "granted";
+      if (!notifAllowed) toast("Turn on notifications for Planner in Settings to get reminders");
+      else scheduleReminderSync();
+      return notifAllowed;
+    } catch { return false; }
+  }
+
+  let syncTimer;
+  function scheduleReminderSync() {
+    if (!Notif) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncReminders, 300);
+  }
+
+  async function syncReminders() {
+    try {
+      const now = Date.now();
+      const due = state.tasks
+        .filter((t) => !t.done && t.time && t.remind !== null)
+        .map((t) => ({ t, at: reminderAt(t) }))
+        .filter((x) => x.at > now + 1000)
+        .sort((a, b) => a.at - b.at)
+        .slice(0, 60); // Android limits how many alarms an app can hold
+      const pending = await Notif.getPending();
+      if (pending.notifications.length) {
+        await Notif.cancel({ notifications: pending.notifications.map((n) => ({ id: Number(n.id) })) });
+      }
+      if (!due.length) return;
+      const perm = await Notif.checkPermissions();
+      if (perm.display !== "granted") return;
+      await Notif.schedule({
+        notifications: due.map(({ t, at }) => ({
+          id: hashId(t.id),
+          title: t.title,
+          body: reminderBody(t),
+          schedule: { at: new Date(at), allowWhileIdle: true },
+          channelId: "reminders",
+          smallIcon: "ic_stat_planner",
+          iconColor: "#4f46e5",
+          extra: { date: t.date, taskId: t.id },
+        })),
+      });
+    } catch (e) {
+      console.warn("Reminder sync failed", e);
+    }
+  }
+
+  function setupNative() {
+    if (!isNative) return;
+    document.documentElement.classList.add("native");
+    $("shareBtn").hidden = false;
+    $("shareBtn").addEventListener("click", shareBackup);
+
+    // Android back button: close sheets first, then go back to today, then leave the app
+    AppPlugin.addListener("backButton", () => {
+      if (el.sheet.open) closeSheet();
+      else if (el.menu.open) el.menu.close();
+      else if (selected !== todayISO()) selectDate(todayISO());
+      else AppPlugin.minimizeApp();
+    });
+
+    if (Notif) {
+      Notif.createChannel({
+        id: "reminders", name: "Task reminders", description: "Reminders for tasks you planned",
+        importance: 4, visibility: 1, vibration: true,
+      }).catch(() => {});
+      // Tapping a reminder opens the app on that task's day
+      Notif.addListener("localNotificationActionPerformed", (a) => {
+        const date = a && a.notification && a.notification.extra && a.notification.extra.date;
+        if (date) selectDate(date);
+      });
+      scheduleReminderSync();
+    }
   }
 
   // ---------- Toast ----------
@@ -348,6 +506,8 @@
   $("moveOverdue").addEventListener("click", moveOverdueToToday);
   el.deleteBtn.addEventListener("click", () => editingId && deleteTask(editingId));
   el.form.addEventListener("submit", (e) => { e.preventDefault(); saveFromForm(); });
+  el.fTime.addEventListener("input", updateRemindField);
+  el.fTime.addEventListener("change", updateRemindField);
 
   $("menuBtn").addEventListener("click", () => el.menu.showModal());
   $("closeMenu").addEventListener("click", () => el.menu.close());
@@ -396,9 +556,10 @@
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   // Offline support
-  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  if (!isNative && "serviceWorker" in navigator && location.protocol !== "file:") {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
   }
 
+  setupNative();
   render();
 })();

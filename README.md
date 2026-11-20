@@ -1,46 +1,47 @@
 # Planner-app
 
-A simple, private planner that lives on your phone.
+A simple, private planner for Android.
 
-- **Your data stays on your phone.** No account, no server, no tracking. Tasks are saved in the phone's browser storage and never sent anywhere.
-- **Works offline.** Once it's installed you don't need internet.
-- **Installs like a normal app.** It gets its own icon on your home screen and opens full-screen.
+- **Your data stays on your phone.** No account, no server, no tracking. Tasks are saved inside the app and never sent anywhere.
+- **Works offline.** It doesn't need internet at all.
+- **Made for Android:** reminders, back button, vibration on tick-off, themed icon, and light or dark mode to match your phone.
 
 ## Features
 
 - Week view: swipe left or right to change weeks, and tap a day to see its tasks
 - Tasks with an optional time, a priority (low, medium or high) and notes
+- **Reminders** at the task's time, or 10 minutes, 30 minutes, 1 hour or 1 day before. Tap a reminder to open that day.
 - Tick tasks off, with a progress bar for each day
 - "Move to today" for unfinished tasks from earlier days
 - Undo after deleting a task
-- Backup and restore to a file (in the ••• menu)
-- Light and dark mode follow your phone's setting
+- Backups (in the ••• menu): save a file to **Documents › Planner**, or send one to Drive or email. Restore from a backup file.
 
-## Put it on your phone
+## Install on Android
 
-The app has to be hosted once at a web address so your phone can download it. GitHub Pages does this for free:
+1. Download `Planner.apk` to your phone.
+2. Tap it. If Android asks, allow your browser or file app to **install unknown apps**.
+3. Tap **Install**. If Play Protect warns about an unknown app, choose **Install anyway**. It only warns because the app isn't from the Play Store.
+4. Open **Planner**. The first time you set a reminder, allow notifications.
 
-1. On GitHub, open this repo and go to **Settings → Pages**.
-2. Under **Build and deployment**, set **Source** to *Deploy from a branch*, pick the branch, choose `/ (root)`, and press **Save**.
-3. After about a minute the page shows your app's address, something like `https://<your-username>.github.io/Planner-app/`.
+> **Tip:** Because nothing leaves your phone, uninstalling the app deletes your tasks. Use **••• → Save a backup file** now and then.
 
-Then open that address on your phone:
+## Building the APK yourself
 
-- **iPhone (Safari):** tap the **Share** button, then **Add to Home Screen**.
-- **Android (Chrome):** tap the **⋮** menu, then **Install app** (or **Add to Home screen**).
+You need Node.js 22+, JDK 21 and the Android SDK (platform 36).
 
-From then on, open it from the home-screen icon. It works without internet.
+```sh
+npm install
+npm run sync                     # copies www/ into the Android project
+cd android && gradle assembleRelease
+```
 
-> **Tip:** Your tasks are only stored on your phone. If you delete the app or clear your browser data, they're gone. Use **••• → Save a backup file** now and then.
+The APK lands in `android/app/build/outputs/apk/release/`. To sign it, create `android/keystore.properties` (it's git-ignored) with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. Android only installs an update over an existing copy if both are signed with the **same key**.
 
-## Files
+## Project layout
 
-| File | What it does |
+| Path | What it is |
 | --- | --- |
-| `index.html` | The app's screen |
-| `styles.css` | How it looks |
-| `app.js` | How it works, and saving to the phone |
-| `sw.js` | Makes it work offline |
-| `manifest.webmanifest`, `icons/` | App name and home-screen icon |
-
-There's no build step. These are plain files.
+| `www/` | The app itself (HTML, CSS, JS). Also works as an installable web app in a browser. |
+| `www/app.js` | All app logic, including the Android-only parts (reminders, back button, backups) |
+| `android/` | The native Android project (made with [Capacitor](https://capacitorjs.com)) |
+| `capacitor.config.json` | App ID, name and plugin settings |

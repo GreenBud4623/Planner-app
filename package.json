@@ -1,0 +1,22 @@
+{
+  "name": "planner-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A private, offline planner for Android",
+  "scripts": {
+    "sync": "cp node_modules/@capacitor/core/dist/capacitor.js www/vendor/ && cap sync android",
+    "build:apk": "npm run sync && cd android && gradle assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/share": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2"
+  }
+}

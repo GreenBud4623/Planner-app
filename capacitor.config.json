@@ -1,0 +1,19 @@
+{
+  "appId": "app.planner.local",
+  "appName": "Planner",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DEFAULT"
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_planner",
+      "iconColor": "#4f46e5"
+    }
+  }
+}

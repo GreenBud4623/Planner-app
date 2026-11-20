@@ -84,6 +84,18 @@
         </label>
       </div>
 
+      <label id="remindField" class="field" hidden>
+        <span>Reminder</span>
+        <select id="fRemind" name="remind">
+          <option value="0">At the time</option>
+          <option value="10">10 minutes before</option>
+          <option value="30">30 minutes before</option>
+          <option value="60">1 hour before</option>
+          <option value="1440">1 day before</option>
+          <option value="off">No reminder</option>
+        </select>
+      </label>
+
       <fieldset class="field">
         <legend>Priority</legend>
         <div class="segmented">
@@ -114,6 +126,7 @@
     <p class="muted small">Everything is saved only on this phone. Nothing is sent anywhere. Make a backup file now and then so you don't lose your tasks.</p>
     <div class="menu-list">
       <button id="exportBtn" class="menu-item" type="button">Save a backup file</button>
+      <button id="shareBtn" class="menu-item" type="button" hidden>Send a backup (Drive, email…)</button>
       <button id="importBtn" class="menu-item" type="button">Restore from a backup file</button>
       <button id="clearDoneBtn" class="menu-item" type="button">Delete completed tasks</button>
       <button id="closeMenu" class="menu-item muted-item" type="button">Close</button>
@@ -123,6 +136,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="vendor/capacitor.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
