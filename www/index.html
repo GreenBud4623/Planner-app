@@ -15,10 +15,10 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body data-tab="plan">
   <header class="top">
     <div class="top-row">
-      <h1 id="monthLabel">Planner</h1>
+      <h1 id="pageTitle">Planner</h1>
       <div class="top-actions">
         <button id="todayBtn" class="pill" type="button">Today</button>
         <button id="menuBtn" class="icon-btn" type="button" aria-label="Menu">
@@ -26,7 +26,7 @@
         </button>
       </div>
     </div>
-    <div class="week">
+    <div class="week" id="weekBar">
       <button id="prevWeek" class="icon-btn small" type="button" aria-label="Previous week">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
@@ -38,29 +38,66 @@
   </header>
 
   <main class="content">
-    <section class="day-head">
-      <h2 id="dayLabel"></h2>
-      <p id="progressText" class="muted"></p>
-      <div class="progress"><div id="progressBar"></div></div>
+    <!-- ===== Planner (day view) ===== -->
+    <section id="view-plan" class="view">
+      <section class="day-head">
+        <h2 id="dayLabel"></h2>
+        <p id="progressText" class="muted"></p>
+        <div class="progress"><div id="progressBar"></div></div>
+      </section>
+
+      <div id="hwPromptPlan" class="hint-card attention" hidden></div>
+
+      <div id="overdue" class="overdue" hidden>
+        <span id="overdueText"></span>
+        <button id="moveOverdue" class="pill" type="button">Move to today</button>
+      </div>
+
+      <div id="dayClasses" class="day-classes" hidden></div>
+
+      <ul id="taskList" class="tasks"></ul>
+
+      <div id="empty" class="empty" hidden>
+        <div class="empty-mark" aria-hidden="true">✓</div>
+        <p>Nothing planned.</p>
+        <p class="muted">Tap <strong>+</strong> to add a task.</p>
+      </div>
     </section>
 
-    <div id="overdue" class="overdue" hidden>
-      <span id="overdueText"></span>
-      <button id="moveOverdue" class="pill" type="button">Move to today</button>
-    </div>
+    <!-- ===== Timetable ===== -->
+    <section id="view-timetable" class="view" hidden>
+      <div id="ttIntro" class="hint-card" hidden>
+        <strong>Add your weekly classes</strong>
+        <p>Tap <strong>+</strong> to add a class. Tick <em>Weekly homework</em> and after each class Planner will ask whether you got homework.</p>
+      </div>
+      <div id="ttList"></div>
+    </section>
 
-    <ul id="taskList" class="tasks"></ul>
-
-    <div id="empty" class="empty" hidden>
-      <div class="empty-mark" aria-hidden="true">✓</div>
-      <p>Nothing planned.</p>
-      <p class="muted">Tap <strong>+</strong> to add a task.</p>
-    </div>
+    <!-- ===== Homework & long-term ===== -->
+    <section id="view-homework" class="view" hidden>
+      <div id="hwPromptTab" class="hint-card attention" hidden></div>
+      <div id="hwSections"></div>
+    </section>
   </main>
 
-  <button id="addBtn" class="fab" type="button" aria-label="Add task">
+  <button id="addBtn" class="fab" type="button" aria-label="Add">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
   </button>
+
+  <nav class="tabbar" aria-label="Sections">
+    <button class="tab" type="button" data-tab="plan" aria-current="page">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+      <span class="tab-label">Planner</span>
+    </button>
+    <button class="tab" type="button" data-tab="timetable">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 10h17M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span class="tab-label">Timetable</span>
+    </button>
+    <button class="tab" type="button" data-tab="homework">
+      <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10.5L19 8v11.5H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.5 12.5l2.2 2.2 4.6-4.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="hwBadge" class="badge" hidden></span></span>
+      <span class="tab-label">Homework</span>
+    </button>
+  </nav>
 
   <!-- Add / edit task sheet -->
   <dialog id="taskSheet" class="sheet">
@@ -68,15 +105,26 @@
       <div class="grabber" aria-hidden="true"></div>
       <h3 id="sheetTitle">New task</h3>
 
+      <div class="segmented type-seg" role="radiogroup" aria-label="Type">
+        <label><input type="radio" name="type" value="task" checked><span>Task</span></label>
+        <label><input type="radio" name="type" value="homework"><span>Homework</span></label>
+        <label><input type="radio" name="type" value="longterm"><span>Long-term</span></label>
+      </div>
+
       <label class="field">
-        <span>Task</span>
+        <span id="fTitleLabel">Task</span>
         <input id="fTitle" name="title" type="text" maxlength="200" placeholder="What do you need to do?" required autocomplete="off">
+      </label>
+
+      <label id="classField" class="field" hidden>
+        <span>Class</span>
+        <select id="fClass" name="classname"></select>
       </label>
 
       <div class="field-row">
         <label class="field">
-          <span>Date</span>
-          <input id="fDate" name="date" type="date" required>
+          <span id="fDateLabel">Date</span>
+          <input id="fDate" name="date" type="date">
         </label>
         <label class="field">
           <span>Time <em>(optional)</em></span>
@@ -98,7 +146,7 @@
 
       <fieldset class="field">
         <legend>Priority</legend>
-        <div class="segmented">
+        <div class="segmented prio-seg">
           <label><input type="radio" name="priority" value="low"><span>Low</span></label>
           <label><input type="radio" name="priority" value="med" checked><span>Medium</span></label>
           <label><input type="radio" name="priority" value="high"><span>High</span></label>
@@ -114,6 +162,77 @@
         <button id="deleteBtn" class="btn danger" type="button" hidden>Delete</button>
         <span class="spacer"></span>
         <button id="cancelBtn" class="btn ghost" type="button">Cancel</button>
+        <button class="btn primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Add / edit class sheet -->
+  <dialog id="classSheet" class="sheet">
+    <form id="classForm" method="dialog">
+      <div class="grabber" aria-hidden="true"></div>
+      <h3 id="classSheetTitle">New class</h3>
+
+      <label class="field">
+        <span>Class</span>
+        <input id="cName" type="text" maxlength="80" placeholder="e.g. Maths" required autocomplete="off" list="classNames">
+        <datalist id="classNames"></datalist>
+      </label>
+
+      <fieldset class="field">
+        <legend id="cDaysLabel">Days <em>(pick one or more)</em></legend>
+        <div id="cDays" class="day-chips"></div>
+      </fieldset>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Starts</span>
+          <input id="cStart" type="time" required>
+        </label>
+        <label class="field">
+          <span>Ends</span>
+          <input id="cEnd" type="time" required>
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Room or teacher <em>(optional)</em></span>
+        <input id="cRoom" type="text" maxlength="80" autocomplete="off">
+      </label>
+
+      <fieldset class="field">
+        <legend>Colour</legend>
+        <div id="cColors" class="swatches"></div>
+      </fieldset>
+
+      <label class="check-row">
+        <input id="cHomework" type="checkbox">
+        <span class="check-box" aria-hidden="true"></span>
+        <span>
+          <strong>Weekly homework</strong>
+          <span class="muted small">After each class you'll get a notification asking if you got homework.</span>
+        </span>
+      </label>
+
+      <div class="sheet-actions">
+        <button id="classDeleteBtn" class="btn danger" type="button" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button id="classCancelBtn" class="btn ghost" type="button">Cancel</button>
+        <button class="btn primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- "What homework did you get?" popup -->
+  <dialog id="hwSheet" class="sheet">
+    <form id="hwForm" method="dialog">
+      <div class="grabber" aria-hidden="true"></div>
+      <h3>What homework did you get?</h3>
+      <p class="muted small">Write the homework for each class, or tap <strong>No homework</strong>.</p>
+      <div id="hwRows" class="hw-rows"></div>
+      <div class="sheet-actions">
+        <span class="spacer"></span>
+        <button id="hwLaterBtn" class="btn ghost" type="button">Later</button>
         <button class="btn primary" type="submit">Save</button>
       </div>
     </form>

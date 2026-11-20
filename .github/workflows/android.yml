@@ -1,0 +1,92 @@
+name: Build Android APK
+
+# Builds a signed Planner.apk on every push and publishes it on the Releases page,
+# so the newest version can be downloaded straight to the phone.
+on:
+  push:
+    paths:
+      - "www/**"
+      - "android/**"
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.json"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the signing key
+        id: key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          if [ -n "$SIGNING_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No SIGNING_KEY secret yet, so the APK was not built. See README › Automatic builds."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install and copy the web app into Android
+        if: steps.key.outputs.present == 'true'
+        run: |
+          npm ci
+          npm run sync
+
+      - name: Restore the signing key
+        if: steps.key.outputs.present == 'true'
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: echo "$SIGNING_KEY" | base64 -d | tar -xz -C android
+
+      - name: Build signed APK
+        if: steps.key.outputs.present == 'true'
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../Planner.apk
+          rm -f keystore.properties planner-release.jks
+
+      - uses: actions/upload-artifact@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          name: Planner-apk
+          path: Planner.apk
+
+      - name: Publish on the Releases page
+        if: steps.key.outputs.present == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Planner (build ${{ github.run_number }})
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            Download **Planner.apk** below on your Android phone and tap it to install.
+            It installs over the previous version and keeps your tasks.
+          files: Planner.apk
