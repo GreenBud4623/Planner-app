@@ -10,14 +10,15 @@ A simple, private planner for Android, made for school.
 
 The app has three tabs:
 
-**Planner** shows your day: that day's classes, then your tasks. Swipe the week strip to change weeks. The **+ Homework** button on a class adds homework due at that class's next lesson.
+**Planner** shows your day: that day's classes, then your tasks. Swipe the week strip to change weeks. The **+ Homework** button on a class adds homework due at that class's next lesson. Tap a class to add homework, mark it as **missed** (it goes to *To recover*), or edit it.
 
-**Timetable** holds your weekly classes. For each class you set the day(s), times, room or teacher, and a colour. Tick **Weekly homework** and after every lesson:
-- you get a notification asking *"Homework for Maths?"*. You can type the homework right in the notification, or tap **No homework**.
+**Timetable** holds your weekly classes. For each class you set the day(s), times, room or teacher, and a colour. Classes can overlap (for example optional subjects or split groups). They're shown together in an "At the same time" box. Tick **Weekly homework** and after every lesson:
+- you get a notification asking *"Homework for Maths?"*. You can type the homework right in the notification, or tap **No homework** or **I was absent**.
 - if you didn't answer, a popup asks **"What homework did you get?"** for each class the next time you open the app. Tap **Later** and it asks again the next time you open it.
 
 **Homework** lists:
 - **Past due**: anything not done whose date has passed, in red, with a badge on the tab
+- **To recover**: classes you missed and need to catch up on (notes, a make-up test…), with the date you missed and an optional "recover by" date
 - **Homework**: what's due next, by class
 - **Long-term**: projects and other things that take a while, with an optional deadline
 

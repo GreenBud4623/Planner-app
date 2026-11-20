@@ -9,7 +9,9 @@
   const STORAGE_KEY = "planner.v1";
   const PRIORITY_RANK = { high: 0, med: 1, low: 2 };
   const PRIORITY_LABEL = { high: "High", med: "Medium", low: "Low" };
-  const TYPES = ["task", "homework", "longterm"];
+  const TYPES = ["task", "homework", "longterm", "recover"];
+  const CLASS_TYPES = ["homework", "recover"]; // item types linked to a class
+  const DATELESS_TYPES = ["longterm", "recover"]; // date is optional for these
   const CLASS_COLORS = ["#4f46e5", "#0891b2", "#16a34a", "#d97706", "#dc2626", "#db2777", "#7c3aed", "#64748b"];
   const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const CHECK_LOOKBACK_DAYS = 7; // only ask about classes from the last week
@@ -99,7 +101,7 @@
 
   function isValidTask(t) {
     return t && typeof t.id === "string" && typeof t.title === "string" &&
-      (isISO(t.date) || (t.type === "longterm" && !t.date));
+      (isISO(t.date) || (DATELESS_TYPES.includes(t.type) && !t.date));
   }
 
   function normalizeTask(t) {
@@ -116,7 +118,9 @@
       createdAt: typeof t.createdAt === "number" ? t.createdAt : Date.now(),
       // minutes before the task time to remind; null = no reminder
       remind: Number.isFinite(t.remind) && t.remind >= 0 ? t.remind : null,
-      className: type === "homework" && typeof t.className === "string" ? t.className.slice(0, 80) : "",
+      className: CLASS_TYPES.includes(type) && typeof t.className === "string" ? t.className.slice(0, 80) : "",
+      // for "recover": the date of the lesson that was missed
+      missedDate: type === "recover" && isISO(t.missedDate) ? t.missedDate : "",
     };
   }
 
@@ -166,6 +170,8 @@
     fTitle: $("fTitle"), fTitleLabel: $("fTitleLabel"), fDate: $("fDate"), fDateLabel: $("fDateLabel"),
     fTime: $("fTime"), fNotes: $("fNotes"), fRemind: $("fRemind"), remindField: $("remindField"),
     fClass: $("fClass"), classField: $("classField"), deleteBtn: $("deleteBtn"),
+    fMissed: $("fMissed"), missedField: $("missedField"),
+    classActions: $("classActions"), caTitle: $("caTitle"), caWhen: $("caWhen"),
     classSheet: $("classSheet"), classForm: $("classForm"), classSheetTitle: $("classSheetTitle"),
     cName: $("cName"), classNames: $("classNames"), cDays: $("cDays"), cDaysLabel: $("cDaysLabel"),
     cStart: $("cStart"), cEnd: $("cEnd"), cRoom: $("cRoom"), cColors: $("cColors"), cHomework: $("cHomework"),
@@ -173,13 +179,38 @@
     hwSheet: $("hwSheet"), hwForm: $("hwForm"), hwRows: $("hwRows"),
     menu: $("menuSheet"), importFile: $("importFile"), toast: $("toast"),
   };
-  const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.menu];
+  const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.classActions, el.menu];
   const anyDialogOpen = () => dialogs().some((d) => d.open);
 
   // ---------- Classes helpers ----------
   const classesOn = (dayIdx) => state.classes.filter((c) => c.day === dayIdx).sort((a, b) => a.start.localeCompare(b.start));
   const classNamesList = () => [...new Set(state.classes.map((c) => c.name))].sort((a, b) => a.localeCompare(b));
   const classColor = (name) => (state.classes.find((c) => c.name === name) || {}).color || "var(--muted)";
+
+  /** Splits a day's classes (sorted by start) into groups that overlap in time. */
+  function overlapGroups(classes) {
+    const groups = [];
+    let cur = null, curEnd = "";
+    for (const c of classes) {
+      if (cur && c.start < curEnd) { cur.push(c); if (c.end > curEnd) curEnd = c.end; }
+      else { cur = [c]; groups.push(cur); curEnd = c.end; }
+    }
+    return groups;
+  }
+
+  const overlapsWith = (c) => state.classes.filter((o) => o.id !== c.id && o.day === c.day && o.start < c.end && c.start < o.end);
+
+  /** Date (ISO) of the most recent lesson of a class with this name, on or before `onOrBeforeISO`. */
+  function lastLessonDate(name, onOrBeforeISO = todayISO()) {
+    const days = new Set(state.classes.filter((c) => c.name === name).map((c) => c.day));
+    for (let i = 0; i < 14; i++) {
+      const d = addDays(fromISO(onOrBeforeISO), -i);
+      if (days.has(weekdayIdx(d))) return toISO(d);
+    }
+    return onOrBeforeISO;
+  }
+
+  const toRecoverCount = (name) => state.tasks.filter((t) => t.type === "recover" && !t.done && t.className === name).length;
 
   /** Date (ISO) of the next lesson of a class with this name, strictly after `afterISO`. */
   function nextLessonDate(name, afterISO) {
@@ -251,15 +282,16 @@
     const meta = li.querySelector(".task-meta");
     const add = (text, cls) => { const s = document.createElement("span"); s.textContent = text; if (cls) s.className = cls; meta.appendChild(s); return s; };
 
-    if (t.type === "homework") {
-      const tag = add(t.className || "Homework", "tag");
+    if (t.type === "homework" || t.type === "recover") {
+      const tag = add((t.type === "recover" ? "↺ " : "") + (t.className || (t.type === "recover" ? "To recover" : "Homework")), "tag");
       tag.style.setProperty("--tag", classColor(t.className));
+      if (t.type === "recover" && t.missedDate) add(`Missed ${relDay(t.missedDate)}`);
     } else if (t.type === "longterm") {
       add("Long-term", "tag tag-long");
     }
     if (opts.showDate && t.date) {
       const diff = dayDiff(t.date);
-      const word = t.type === "longterm" ? "Deadline" : t.type === "homework" ? "Due" : "";
+      const word = t.type === "longterm" ? "Deadline" : t.type === "homework" ? "Due" : t.type === "recover" ? "Recover by" : "";
       if (!t.done && diff < 0) add(`${-diff} day${diff < -1 ? "s" : ""} late`, "late");
       else add(word ? `${word} ${relDay(t.date)}` : cap(relDay(t.date)));
     } else if (opts.showDate && t.type === "longterm") {
@@ -267,6 +299,7 @@
     }
     if (t.time) add("🕒 " + formatTime(t.time) + (isNative && t.remind !== null && !t.done ? " 🔔" : ""));
     if (!opts.showDate && t.type === "longterm") add("Deadline");
+    if (!opts.showDate && t.type === "recover") add("Recover by today");
     if (t.priority !== "med" || t.type === "task") add(PRIORITY_LABEL[t.priority] + " priority");
 
     if (t.notes) {
@@ -374,7 +407,9 @@
       h.textContent = "Classes";
       el.dayClasses.appendChild(h);
       const now = new Date();
-      for (const c of classes) {
+      for (const group of overlapGroups(classes)) {
+       const parent = group.length > 1 ? overlapWrap(el.dayClasses) : el.dayClasses;
+       for (const c of group) {
         const row = document.createElement("div");
         row.className = "class-row";
         row.style.setProperty("--c", c.color);
@@ -386,16 +421,29 @@
         row.querySelector(".class-time").textContent = `${formatTime(c.start)}–${formatTime(c.end)}`;
         row.querySelector(".class-name").textContent = c.name;
         row.querySelector(".class-room").textContent = c.room;
-        row.querySelector(".class-row-main").addEventListener("click", () => openClassSheet(c.id));
+        row.querySelector(".class-row-main").addEventListener("click", () => openClassActions(c));
         const hb = row.querySelector(".mini-btn");
         hb.setAttribute("aria-label", `Add homework for ${c.name}`);
         hb.addEventListener("click", () => openTaskSheet(null, { type: "homework", className: c.name, date: nextLessonDate(c.name, selected) }));
-        el.dayClasses.appendChild(row);
+        parent.appendChild(row);
+       }
       }
     }
 
     el.list.replaceChildren(...tasks.map((t) => renderTask(t)));
     el.empty.hidden = tasks.length > 0 || classes.length > 0;
+  }
+
+  /** A box that holds classes taking place at the same time. */
+  function overlapWrap(parent) {
+    const wrap = document.createElement("div");
+    wrap.className = "overlap-group";
+    const label = document.createElement("div");
+    label.className = "overlap-label";
+    label.textContent = "⇄ At the same time";
+    wrap.appendChild(label);
+    parent.appendChild(wrap);
+    return wrap;
   }
 
   // ---------- Rendering: Timetable ----------
@@ -419,7 +467,9 @@
         p.textContent = "No classes";
         sec.appendChild(p);
       }
-      for (const c of classes) {
+      for (const group of overlapGroups(classes)) {
+       const parent = group.length > 1 ? overlapWrap(sec) : sec;
+       for (const c of group) {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "class-card";
@@ -433,9 +483,12 @@
         const meta = [];
         if (c.room) meta.push(c.room);
         if (c.homeworkCheck) meta.push("📝 Weekly homework");
+        const rc = toRecoverCount(c.name);
+        if (rc) meta.push(`↺ ${rc} to recover`);
         b.querySelector(".cc-meta").textContent = meta.join(" · ");
         b.addEventListener("click", () => openClassSheet(c.id));
-        sec.appendChild(b);
+        parent.appendChild(b);
+       }
       }
       el.ttList.appendChild(sec);
     }
@@ -454,6 +507,8 @@
     const pastDue = pastDueItems().sort(byDate);
     const homework = state.tasks.filter((t) => t.type === "homework" && !t.done && t.date >= today).sort(byDate);
     const longterm = state.tasks.filter((t) => t.type === "longterm" && !t.done && (!t.date || t.date >= today)).sort(byDate);
+    const recover = state.tasks.filter((t) => t.type === "recover" && !t.done && (!t.date || t.date >= today))
+      .sort((a, b) => byDate(a, b) || (a.missedDate || "").localeCompare(b.missedDate || ""));
     const doneRecently = state.tasks
       .filter((t) => t.done && t.type !== "task" && (!t.date || dayDiff(t.date) >= -14))
       .sort((a, b) => byDate(b, a)).slice(0, 10);
@@ -480,6 +535,7 @@
       el.hwSections.appendChild(sec);
     };
     if (pastDue.length) section("Past due", pastDue, "", "past-due");
+    section("To recover", recover, "Missed a class? Tap it on the Planner and choose “I missed this class”, or tap + and pick Recover.", "recover");
     section("Homework", homework, "No homework due. 🎉");
     section("Long-term", longterm, "Projects, revision or anything that takes a while. Tap + and pick Long-term.");
     if (doneRecently.length) section("Done recently", doneRecently, "");
@@ -532,13 +588,20 @@
 
   function updateTypeFields() {
     const type = currentType();
-    el.classField.hidden = type !== "homework";
-    el.fTitleLabel.textContent = type === "homework" ? "Homework" : type === "longterm" ? "Long-term task" : "Task";
+    el.classField.hidden = !CLASS_TYPES.includes(type);
+    el.missedField.hidden = type !== "recover";
+    el.fTitleLabel.innerHTML = type === "homework" ? "Homework" : type === "longterm" ? "Long-term task" :
+      type === "recover" ? "What to recover <em>(optional)</em>" : "Task";
     el.fTitle.placeholder = type === "homework" ? "e.g. Exercises 1–5, page 42" :
-      type === "longterm" ? "e.g. History project" : "What do you need to do?";
-    el.fDateLabel.innerHTML = type === "homework" ? "Due date" : type === "longterm" ? "Deadline <em>(optional)</em>" : "Date";
-    el.fDate.required = type !== "longterm";
+      type === "longterm" ? "e.g. History project" :
+      type === "recover" ? "e.g. Copy notes, make-up test" : "What do you need to do?";
+    el.fTitle.required = type !== "recover";
+    el.fDateLabel.innerHTML = type === "homework" ? "Due date" : type === "longterm" ? "Deadline <em>(optional)</em>" :
+      type === "recover" ? "Recover by <em>(optional)</em>" : "Date";
+    el.fDate.required = !DATELESS_TYPES.includes(type);
   }
+
+  const sheetTitleFor = (type) => ({ homework: "New homework", longterm: "New long-term task", recover: "Class to recover" }[type] || "New task");
 
   function updateRemindField() {
     el.remindField.hidden = !(isNative && el.fTime.value);
@@ -549,12 +612,13 @@
     const t = id ? state.tasks.find((x) => x.id === id) : null;
     const type = t ? t.type : preset.type || (tab === "homework" ? "homework" : "task");
     el.form.elements.type.value = type;
-    el.sheetTitle.textContent = t ? "Edit" : type === "homework" ? "New homework" : type === "longterm" ? "New long-term task" : "New task";
-    el.fTitle.value = t ? t.title : "";
+    el.sheetTitle.textContent = t ? "Edit" : sheetTitleFor(type);
+    el.fTitle.value = t ? (t.type === "recover" && t.title === recoverTitle(t.className) ? "" : t.title) : "";
     fillClassSelect(t ? t.className : preset.className);
+    el.fMissed.value = t ? t.missedDate : (preset.missedDate || (type === "recover" && el.fClass.value ? lastLessonDate(el.fClass.value) : ""));
     let date = t ? t.date : preset.date;
     if (!t && !date) date = type === "homework" && el.fClass.value ? nextLessonDate(el.fClass.value, todayISO()) : (tab === "plan" ? selected : todayISO());
-    if (!t && type === "longterm" && !preset.date) date = "";
+    if (!t && DATELESS_TYPES.includes(type) && !preset.date) date = "";
     el.fDate.value = date || "";
     el.fTime.value = t ? t.time : "";
     el.fNotes.value = t ? t.notes : "";
@@ -571,10 +635,11 @@
   function closeTaskSheet() { el.sheet.close(); editingId = null; }
 
   function saveTaskFromForm() {
-    const title = el.fTitle.value.trim();
-    if (!title) { el.fTitle.focus(); return; }
     const type = currentType();
-    if (type !== "longterm" && !el.fDate.value) { el.fDate.focus(); return; }
+    let title = el.fTitle.value.trim();
+    if (!title && type === "recover") title = recoverTitle(el.fClass.value);
+    if (!title) { el.fTitle.focus(); return; }
+    if (!DATELESS_TYPES.includes(type) && !el.fDate.value) { el.fDate.focus(); return; }
     const data = {
       type,
       title,
@@ -583,7 +648,8 @@
       priority: el.form.elements.priority.value || "med",
       notes: el.fNotes.value.trim(),
       remind: el.fTime.value && el.fRemind.value !== "off" ? Number(el.fRemind.value) : null,
-      className: type === "homework" ? el.fClass.value : "",
+      className: CLASS_TYPES.includes(type) ? el.fClass.value : "",
+      missedDate: type === "recover" ? el.fMissed.value : "",
     };
     if (editingId) {
       const t = state.tasks.find((x) => x.id === editingId);
@@ -594,7 +660,9 @@
     save();
     closeTaskSheet();
     if (tab === "plan" && data.date) selectDate(data.date); else render();
-    if (!editingId && tab === "plan" && type !== "task") toast(type === "homework" ? "Added to Homework" : "Added to Long-term");
+    if (!editingId && tab === "plan" && type !== "task") {
+      toast(type === "homework" ? "Added to Homework" : type === "recover" ? "Added to To recover" : "Added to Long-term");
+    }
     if (data.time && data.remind !== null) ensureNotificationPermission();
   }
 
@@ -676,6 +744,22 @@
 
   function closeClassSheet() { el.classSheet.close(); editingClassId = null; }
 
+  // ---------- Class actions (tap a class on the Planner) ----------
+  let actionClass = null;
+  function openClassActions(c) {
+    actionClass = c;
+    el.caTitle.textContent = c.name;
+    el.caWhen.textContent = `${cap(relDay(selected))} · ${formatTime(c.start)}–${formatTime(c.end)}${c.room ? " · " + c.room : ""}`;
+    el.classActions.showModal();
+  }
+  function recoverTitle(name) { return name ? `Catch up on ${name}` : "Catch up on a missed class"; }
+  function addRecover(cls, missedDate, notes = "") {
+    state.tasks.push(normalizeTask({
+      id: newId(), type: "recover", title: recoverTitle(cls.name), className: cls.name, missedDate,
+      date: "", time: "", priority: "med", notes, done: false, createdAt: Date.now(), remind: null,
+    }));
+  }
+
   function saveClassFromForm() {
     const name = el.cName.value.trim();
     if (!name) { el.cName.focus(); return; }
@@ -707,6 +791,9 @@
     save();
     closeClassSheet();
     render();
+    const saved = state.classes.filter((c) => c.name === name && (editingClassId ? true : days.includes(c.day)));
+    const clashes = [...new Set(saved.flatMap((c) => overlapsWith(c)).map((o) => o.name).filter((n) => n !== name))];
+    if (clashes.length) toast(`Saved — runs at the same time as ${clashes.slice(0, 2).join(" and ")}`);
     if (base.homeworkCheck) ensureNotificationPermission();
   }
 
@@ -737,24 +824,32 @@
         <input class="hw-text" type="text" maxlength="200" placeholder="What's the homework?" autocomplete="off">
         <div class="hw-row-foot">
           <label class="hw-due"><span class="muted small">Due</span><input class="hw-date" type="date"></label>
+        </div>
+        <div class="hw-row-chips">
           <button class="chip hw-none" type="button" aria-pressed="false">No homework</button>
+          <button class="chip hw-absent" type="button" aria-pressed="false">I was absent</button>
         </div>`;
       row.querySelector(".hw-class").textContent = p.cls.name;
       row.querySelector(".hw-when").textContent = `${cap(relDay(p.date))}, ${formatTime(p.cls.start)}–${formatTime(p.cls.end)}`;
       row.querySelector(".hw-text").setAttribute("aria-label", `Homework for ${p.cls.name}`);
       row.querySelector(".hw-date").value = nextLessonDate(p.cls.name, todayISO());
       const none = row.querySelector(".hw-none");
+      const absent = row.querySelector(".hw-absent");
+      const setState = (st) => { // "", "none" or "absent"
+        none.setAttribute("aria-pressed", String(st === "none"));
+        absent.setAttribute("aria-pressed", String(st === "absent"));
+        row.dataset.state = st;
+        row.classList.toggle("is-none", st !== "");
+      };
       none.addEventListener("click", () => {
-        const on = none.getAttribute("aria-pressed") !== "true";
-        none.setAttribute("aria-pressed", String(on));
-        row.classList.toggle("is-none", on);
-        if (on) row.querySelector(".hw-text").value = "";
+        setState(row.dataset.state === "none" ? "" : "none");
+        if (row.dataset.state) row.querySelector(".hw-text").value = "";
       });
+      absent.addEventListener("click", () => setState(row.dataset.state === "absent" ? "" : "absent"));
       row.querySelector(".hw-text").addEventListener("input", (e) => {
-        if (e.target.value && none.getAttribute("aria-pressed") === "true") {
-          none.setAttribute("aria-pressed", "false"); row.classList.remove("is-none");
-        }
+        if (e.target.value && row.dataset.state === "none") setState("");
       });
+      setState("");
       el.hwRows.appendChild(row);
     }
     el.hwSheet.showModal();
@@ -771,14 +866,19 @@
 
   function saveHomeworkCheck() {
     const pending = new Map(pendingChecks().map((p) => [p.key, p]));
-    let added = 0, none = 0, left = 0;
+    let added = 0, none = 0, left = 0, absent = 0;
     el.hwRows.querySelectorAll(".hw-row").forEach((row) => {
       const p = pending.get(row.dataset.key);
       if (!p) return;
       const text = row.querySelector(".hw-text").value.trim();
-      const isNone = row.querySelector(".hw-none").getAttribute("aria-pressed") === "true";
-      if (text) { addHomework(p.cls, text, row.querySelector(".hw-date").value); state.hwAnswered[p.key] = Date.now(); added++; }
-      else if (isNone) { state.hwAnswered[p.key] = Date.now(); none++; }
+      const st = row.dataset.state;
+      if (st === "absent") {
+        // missed the class: add it to "To recover" (with any homework text as a note)
+        addRecover(p.cls, p.date, text ? `Homework: ${text}` : "");
+        state.hwAnswered[p.key] = Date.now(); absent++;
+      }
+      else if (text) { addHomework(p.cls, text, row.querySelector(".hw-date").value); state.hwAnswered[p.key] = Date.now(); added++; }
+      else if (st === "none") { state.hwAnswered[p.key] = Date.now(); none++; }
       else { hwSnoozed.add(p.key); left++; }
     });
     save();
@@ -786,6 +886,7 @@
     render();
     const parts = [];
     if (added) parts.push(`Added ${added} homework`);
+    if (absent) parts.push(`${absent} class${absent > 1 ? "es" : ""} to recover`);
     if (left) parts.push(`I'll ask again about ${left} class${left > 1 ? "es" : ""}`);
     toast(parts.join(" · ") || (none ? "Got it — no homework" : "Saved"));
   }
@@ -805,7 +906,7 @@
   // ---------- Backup ----------
   const backupName = () => `planner-backup-${todayISO()}.json`;
   const backupJSON = () =>
-    JSON.stringify({ app: "planner", version: 2, exportedAt: new Date().toISOString(), ...state }, null, 2);
+    JSON.stringify({ app: "planner", version: 3, exportedAt: new Date().toISOString(), ...state }, null, 2);
 
   async function exportBackup() {
     if (Files) {
@@ -984,6 +1085,11 @@
         state.hwAnswered[key] = Date.now();
         save(); render();
         toast(`Got it — no homework for ${cls.name}`);
+      } else if (a.actionId === "absent") {
+        addRecover(cls, lastEndedLesson(cls));
+        state.hwAnswered[key] = Date.now();
+        save(); render();
+        toast(`${cls.name} added to To recover`);
       } else if (a.actionId === "reply" && text) {
         addHomework(cls, text);
         state.hwAnswered[key] = Date.now();
@@ -1033,6 +1139,7 @@
           actions: [
             { id: "reply", title: "Type homework", input: true, inputButtonTitle: "Save", inputPlaceholder: "What's the homework?" },
             { id: "none", title: "No homework" },
+            { id: "absent", title: "I was absent" },
           ],
         }],
       }).catch(() => {});
@@ -1079,13 +1186,16 @@
     if (!editingId) {
       const type = currentType();
       if (type === "homework" && el.fClass.value) el.fDate.value = nextLessonDate(el.fClass.value, todayISO());
-      if (type === "longterm") el.fDate.value = "";
+      if (DATELESS_TYPES.includes(type)) el.fDate.value = "";
+      if (type === "recover" && !el.fMissed.value && el.fClass.value) el.fMissed.value = lastLessonDate(el.fClass.value);
       if (type === "task" && !el.fDate.value) el.fDate.value = tab === "plan" ? selected : todayISO();
-      el.sheetTitle.textContent = type === "homework" ? "New homework" : type === "longterm" ? "New long-term task" : "New task";
+      el.sheetTitle.textContent = sheetTitleFor(type);
     }
   }));
   el.fClass.addEventListener("change", () => {
-    if (!editingId && el.fClass.value) el.fDate.value = nextLessonDate(el.fClass.value, todayISO());
+    if (editingId || !el.fClass.value) return;
+    if (currentType() === "homework") el.fDate.value = nextLessonDate(el.fClass.value, todayISO());
+    if (currentType() === "recover") el.fMissed.value = lastLessonDate(el.fClass.value);
   });
   el.fTime.addEventListener("input", updateRemindField);
   el.fTime.addEventListener("change", updateRemindField);
@@ -1094,6 +1204,17 @@
   $("classCancelBtn").addEventListener("click", closeClassSheet);
   el.classDeleteBtn.addEventListener("click", () => editingClassId && deleteClass(editingClassId));
   el.classForm.addEventListener("submit", (e) => { e.preventDefault(); saveClassFromForm(); });
+
+  $("caHomework").addEventListener("click", () => {
+    el.classActions.close();
+    openTaskSheet(null, { type: "homework", className: actionClass.name, date: nextLessonDate(actionClass.name, selected) });
+  });
+  $("caMissed").addEventListener("click", () => {
+    el.classActions.close();
+    openTaskSheet(null, { type: "recover", className: actionClass.name, missedDate: selected });
+  });
+  $("caEdit").addEventListener("click", () => { el.classActions.close(); openClassSheet(actionClass.id); });
+  $("caClose").addEventListener("click", () => el.classActions.close());
 
   el.hwForm.addEventListener("submit", (e) => { e.preventDefault(); saveHomeworkCheck(); });
   $("hwLaterBtn").addEventListener("click", snoozeHomeworkCheck);

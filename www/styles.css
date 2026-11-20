@@ -530,3 +530,31 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
 .hw-row.is-none .hw-text, .hw-row.is-none .hw-due { opacity: 0.45; }
+
+/* Overlapping classes */
+.overlap-group {
+  position: relative;
+  border: 2px dashed var(--line);
+  border-radius: 16px;
+  padding: 6px 6px 0;
+  margin-bottom: 8px;
+}
+.overlap-label {
+  font-size: 12px; font-weight: 700;
+  color: var(--muted);
+  padding: 0 4px 6px;
+}
+.overlap-group .class-card, .overlap-group .class-row { margin-bottom: 6px; }
+
+/* Four task types fit on narrow phones */
+.type-seg { grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.type-seg span { font-size: 13px; padding: 10px 0; }
+
+/* To recover */
+.recover .section-title { color: var(--med); }
+
+/* Homework popup: answer chips */
+.hw-row-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.hw-row.is-none .hw-due { opacity: 0.45; }
+.hw-row[data-state="absent"] .hw-text { opacity: 1; }
+.hw-row[data-state="absent"] .hw-text::placeholder { color: var(--muted); }

@@ -109,6 +109,7 @@
         <label><input type="radio" name="type" value="task" checked><span>Task</span></label>
         <label><input type="radio" name="type" value="homework"><span>Homework</span></label>
         <label><input type="radio" name="type" value="longterm"><span>Long-term</span></label>
+        <label><input type="radio" name="type" value="recover"><span>Recover</span></label>
       </div>
 
       <label class="field">
@@ -119,6 +120,11 @@
       <label id="classField" class="field" hidden>
         <span>Class</span>
         <select id="fClass" name="classname"></select>
+      </label>
+
+      <label id="missedField" class="field" hidden>
+        <span>Missed lesson</span>
+        <input id="fMissed" name="missed" type="date">
       </label>
 
       <div class="field-row">
@@ -223,12 +229,25 @@
     </form>
   </dialog>
 
+  <!-- Actions for a class on the day view -->
+  <dialog id="classActions" class="sheet">
+    <div class="grabber" aria-hidden="true"></div>
+    <h3 id="caTitle"></h3>
+    <p id="caWhen" class="muted small"></p>
+    <div class="menu-list">
+      <button id="caHomework" class="menu-item" type="button">📝 Add homework</button>
+      <button id="caMissed" class="menu-item" type="button">↺ I missed this class — add to <em>To recover</em></button>
+      <button id="caEdit" class="menu-item" type="button">✏️ Edit class</button>
+      <button id="caClose" class="menu-item muted-item" type="button">Cancel</button>
+    </div>
+  </dialog>
+
   <!-- "What homework did you get?" popup -->
   <dialog id="hwSheet" class="sheet">
     <form id="hwForm" method="dialog">
       <div class="grabber" aria-hidden="true"></div>
       <h3>What homework did you get?</h3>
-      <p class="muted small">Write the homework for each class, or tap <strong>No homework</strong>.</p>
+      <p class="muted small">Write the homework for each class, or tap <strong>No homework</strong>. If you weren't there, tap <strong>I was absent</strong> and it goes to <em>To recover</em>.</p>
       <div id="hwRows" class="hw-rows"></div>
       <div class="sheet-actions">
         <span class="spacer"></span>
