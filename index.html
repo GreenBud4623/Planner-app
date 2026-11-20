@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Planner</title>
+  <meta name="description" content="A private planner that lives on your phone and works offline.">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Planner">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-row">
+      <h1 id="monthLabel">Planner</h1>
+      <div class="top-actions">
+        <button id="todayBtn" class="pill" type="button">Today</button>
+        <button id="menuBtn" class="icon-btn" type="button" aria-label="Menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="week">
+      <button id="prevWeek" class="icon-btn small" type="button" aria-label="Previous week">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div id="weekStrip" class="week-strip" role="tablist" aria-label="Days of the week"></div>
+      <button id="nextWeek" class="icon-btn small" type="button" aria-label="Next week">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="day-head">
+      <h2 id="dayLabel"></h2>
+      <p id="progressText" class="muted"></p>
+      <div class="progress"><div id="progressBar"></div></div>
+    </section>
+
+    <div id="overdue" class="overdue" hidden>
+      <span id="overdueText"></span>
+      <button id="moveOverdue" class="pill" type="button">Move to today</button>
+    </div>
+
+    <ul id="taskList" class="tasks"></ul>
+
+    <div id="empty" class="empty" hidden>
+      <div class="empty-mark" aria-hidden="true">✓</div>
+      <p>Nothing planned.</p>
+      <p class="muted">Tap <strong>+</strong> to add a task.</p>
+    </div>
+  </main>
+
+  <button id="addBtn" class="fab" type="button" aria-label="Add task">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+  </button>
+
+  <!-- Add / edit task sheet -->
+  <dialog id="taskSheet" class="sheet">
+    <form id="taskForm" method="dialog">
+      <div class="grabber" aria-hidden="true"></div>
+      <h3 id="sheetTitle">New task</h3>
+
+      <label class="field">
+        <span>Task</span>
+        <input id="fTitle" name="title" type="text" maxlength="200" placeholder="What do you need to do?" required autocomplete="off">
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Date</span>
+          <input id="fDate" name="date" type="date" required>
+        </label>
+        <label class="field">
+          <span>Time <em>(optional)</em></span>
+          <input id="fTime" name="time" type="time">
+        </label>
+      </div>
+
+      <fieldset class="field">
+        <legend>Priority</legend>
+        <div class="segmented">
+          <label><input type="radio" name="priority" value="low"><span>Low</span></label>
+          <label><input type="radio" name="priority" value="med" checked><span>Medium</span></label>
+          <label><input type="radio" name="priority" value="high"><span>High</span></label>
+        </div>
+      </fieldset>
+
+      <label class="field">
+        <span>Notes <em>(optional)</em></span>
+        <textarea id="fNotes" name="notes" rows="3" maxlength="2000"></textarea>
+      </label>
+
+      <div class="sheet-actions">
+        <button id="deleteBtn" class="btn danger" type="button" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button id="cancelBtn" class="btn ghost" type="button">Cancel</button>
+        <button class="btn primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Menu sheet -->
+  <dialog id="menuSheet" class="sheet">
+    <div class="grabber" aria-hidden="true"></div>
+    <h3>Your data</h3>
+    <p class="muted small">Everything is saved only on this phone. Nothing is sent anywhere. Make a backup file now and then so you don't lose your tasks.</p>
+    <div class="menu-list">
+      <button id="exportBtn" class="menu-item" type="button">Save a backup file</button>
+      <button id="importBtn" class="menu-item" type="button">Restore from a backup file</button>
+      <button id="clearDoneBtn" class="menu-item" type="button">Delete completed tasks</button>
+      <button id="closeMenu" class="menu-item muted-item" type="button">Close</button>
+    </div>
+    <input id="importFile" type="file" accept="application/json,.json" hidden>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
