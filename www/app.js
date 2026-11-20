@@ -12,7 +12,7 @@
   const TYPES = ["task", "homework", "longterm", "recover", "test"];
   const CLASS_TYPES = ["homework", "recover", "test"]; // item types linked to a class
   const DATELESS_TYPES = ["longterm", "recover"]; // date is optional for these
-  const CLASS_COLORS = ["#4f46e5", "#0891b2", "#16a34a", "#d97706", "#dc2626", "#db2777", "#7c3aed", "#64748b"];
+  const CLASS_COLORS = ["#16a34a", "#0891b2", "#4f46e5", "#d97706", "#dc2626", "#db2777", "#7c3aed", "#64748b"];
   const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const CHECK_LOOKBACK_DAYS = 7; // only ask about classes from the last week
 
@@ -1136,7 +1136,7 @@
           schedule: { at: new Date(at), allowWhileIdle: true },
           channelId: "reminders",
           smallIcon: "ic_stat_planner",
-          iconColor: "#4f46e5",
+          iconColor: "#15803d",
           extra: { kind: "reminder", date: t.date, taskId: t.id },
         }));
 
@@ -1152,7 +1152,7 @@
           channelId: "homework",
           actionTypeId: "HW_CHECK",
           smallIcon: "ic_stat_planner",
-          iconColor: "#4f46e5",
+          iconColor: "#15803d",
           extra: { kind: "hwcheck", classId: c.id },
         };
       });
