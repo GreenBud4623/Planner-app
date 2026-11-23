@@ -1,23 +1,24 @@
-name: Build Android APK
+name: Build apps
 
-# Builds a signed Planner.apk on every push and publishes it on the Releases page,
-# so the newest version can be downloaded straight to the phone.
+# On every push: builds a signed Planner.apk (Android) and Planner-Setup.exe / Planner-Portable.exe
+# (Windows), then publishes them together on the Releases page.
 on:
   push:
     paths:
       - "www/**"
       - "android/**"
+      - "desktop/**"
       - "package.json"
       - "package-lock.json"
       - "capacitor.config.json"
-      - ".github/workflows/android.yml"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: android-${{ github.ref }}
+  group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -78,8 +79,41 @@ jobs:
           name: Planner-apk
           path: Planner.apk
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Build the Windows app
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Planner-windows
+          path: |
+            desktop/dist/Planner-Setup.exe
+            desktop/dist/Planner-Portable.exe
+
+  release:
+    needs: [apk, windows]
+    if: always() && (needs.apk.result == 'success' || needs.windows.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
       - name: Publish on the Releases page
-        if: steps.key.outputs.present == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
@@ -87,6 +121,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           make_latest: true
           body: |
-            Download **Planner.apk** below on your Android phone and tap it to install.
-            It installs over the previous version and keeps your tasks.
-          files: Planner.apk
+            **Android:** download **Planner.apk** on your phone and tap it to install. It installs over the previous version and keeps your tasks.
+
+            **Windows PC:** download **Planner-Setup.exe** and run it (or **Planner-Portable.exe** to run it without installing). If Windows shows "Windows protected your PC", click **More info → Run anyway**. Updating installs over the old version and keeps your tasks.
+          files: out/*

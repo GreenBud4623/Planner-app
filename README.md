@@ -1,10 +1,10 @@
 # Planner-app
 
-A simple, private planner for Android, made for school.
+A simple, private planner for Android and Windows PC, made for school.
 
-- **Your data stays on your phone.** No account, no server, no tracking. Tasks are saved inside the app and never sent anywhere.
+- **Your data stays on your device.** No account, no server, no tracking. Tasks are saved inside the app and never sent anywhere.
 - **Works offline.** It doesn't need internet at all.
-- **Made for Android:** reminders, back button, vibration on tick-off, themed icon, and light or dark mode to match your phone.
+- **Runs on Android and Windows.** On Android: reminders, back button, vibration on tick-off, themed icon, and light or dark mode to match your phone.
 
 ## Features
 
@@ -41,11 +41,26 @@ Also:
 
 > **Tip:** Because nothing leaves your phone, uninstalling the app deletes your tasks. Use **••• → Save a backup file** now and then.
 
+## Install on Windows PC
+
+1. Open the newest release on the **Releases** page and download `Planner-Setup.exe`.
+2. Run it. If Windows shows **"Windows protected your PC"**, click **More info → Run anyway**. It only warns because the app isn't signed by a paid certificate.
+3. Planner installs for your user only (no admin needed) and adds a Start menu and desktop shortcut.
+
+Don't want to install? Download `Planner-Portable.exe` instead and just run it.
+
+**On the PC:**
+- Reminders and the after-class *"Homework for Maths?"* check-ins show as Windows notifications. Click one to open that day or answer the check-in.
+- Closing the window keeps Planner running in the **system tray** (by the clock) so reminders still arrive. Right-click the tray icon to **Quit**, or tick **Start with Windows** so reminders work after a restart.
+- Keyboard shortcuts: **N** new item, **T** today, **← / →** previous / next day, **Ctrl + ← / →** previous / next week, **1–4** switch tabs, **Esc** closes a sheet.
+- Backups save to **Documents › Planner** by default.
+- Your phone and PC each keep their own tasks. To move tasks across, use **••• → Save a backup file** on one and **Restore from a backup file** on the other (restoring adds what's missing; it doesn't delete anything).
+
 ## Automatic builds (updates)
 
-Every push to this repo builds a signed `Planner.apk` with GitHub Actions and posts it on the **Releases** page. Open the newest release on your phone, download `Planner.apk`, and tap it. It installs over the old version and keeps your tasks.
+Every push to this repo builds a signed `Planner.apk` and the Windows `Planner-Setup.exe` / `Planner-Portable.exe` with GitHub Actions and posts them on the **Releases** page. Open the newest release, download the file for your device, and open it. It installs over the old version and keeps your tasks.
 
-This needs the app's signing key saved as a repository secret, once:
+The Windows app builds without any setup. The APK needs the app's signing key saved as a repository secret, once:
 
 1. Repo **Settings → Secrets and variables → Actions → New repository secret**
 2. Name: `SIGNING_KEY`
@@ -65,12 +80,26 @@ cd android && gradle assembleRelease
 
 The APK lands in `android/app/build/outputs/apk/release/`. To sign it, unpack the key into `android/` (both files are git-ignored): `base64 -d SIGNING_KEY.txt | tar -xz -C android`. Android only installs an update over an existing copy if both are signed with the **same key**.
 
+## Building the Windows app yourself
+
+You need Node.js 22+ on Windows.
+
+```sh
+cd desktop
+npm install
+npm start        # run it
+npm run build    # makes desktop/dist/Planner-Setup.exe and Planner-Portable.exe
+```
+
+`npm start` and `npm run build` first copy `www/` into `desktop/www` (a git-ignored build copy), so always edit the files in `www/`.
+
 ## Project layout
 
 | Path | What it is |
 | --- | --- |
 | `www/` | The app itself (HTML, CSS, JS). Also works as an installable web app in a browser. |
-| `www/app.js` | All app logic: planner, timetable, homework check-ins, plus the Android-only parts (notifications, back button, backups) |
+| `www/app.js` | All app logic: planner, timetable, homework check-ins, plus the Android and Windows parts (notifications, back button, backups, keyboard shortcuts) |
 | `android/` | The native Android project (made with [Capacitor](https://capacitorjs.com)) |
+| `desktop/` | The Windows app (made with [Electron](https://www.electronjs.org)): window, tray, Windows notifications |
 | `capacitor.config.json` | App ID, name and plugin settings |
-| `.github/workflows/android.yml` | Builds the signed APK and publishes it on Releases |
+| `.github/workflows/build.yml` | Builds the signed APK and the Windows app and publishes them on Releases |

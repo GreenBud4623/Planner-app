@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# build copy of ../www (made by `npm run copy-web`)
+www/

@@ -54,7 +54,11 @@
   const Cap = window.Capacitor;
   const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
   const plugin = (name) => (isNative ? Cap.registerPlugin(name) : null);
-  const Notif = plugin("LocalNotifications");
+  // ---------- Desktop (Windows app, Electron) bridge ----------
+  // desktop/preload.js exposes the same notification API as Capacitor, backed by Windows notifications.
+  const Desktop = window.plannerDesktop || null;
+  const isDesktop = !!Desktop;
+  const Notif = isNative ? plugin("LocalNotifications") : (Desktop ? Desktop.notifications : null);
   const AppPlugin = plugin("App");
   const Haptics = plugin("Haptics");
   const Files = plugin("Filesystem");
@@ -315,7 +319,7 @@
     } else if (opts.showDate && t.type === "longterm") {
       add("No deadline");
     }
-    if (t.time) add("🕒 " + formatTime(t.time) + (isNative && t.remind !== null && !t.done ? " 🔔" : ""));
+    if (t.time) add("🕒 " + formatTime(t.time) + (Notif && t.remind !== null && !t.done ? " 🔔" : ""));
     if (!opts.showDate && t.type === "longterm") add("Deadline");
     if (!opts.showDate && t.type === "recover") add("Recover by today");
     if (t.type !== "test" && (t.priority !== "med" || t.type === "task")) add(PRIORITY_LABEL[t.priority] + " priority");
@@ -690,7 +694,7 @@
   const sheetTitleFor = (type) => ({ homework: "New homework", longterm: "New long-term task", recover: "Class to recover", test: "New test" }[type] || "New task");
 
   function updateRemindField() {
-    el.remindField.hidden = !(isNative && (el.fTime.value || currentType() === "test"));
+    el.remindField.hidden = !(Notif && (el.fTime.value || currentType() === "test"));
   }
 
   function openTaskSheet(id = null, preset = {}) {
@@ -1246,6 +1250,31 @@
     }
   }
 
+  function setupDesktop() {
+    if (!isDesktop) return;
+    document.documentElement.classList.add("desktop");
+    Notif.addListener("localNotificationActionPerformed", handleNotificationAction);
+    scheduleNotificationSync();
+  }
+
+  // Keyboard shortcuts (PC): N = new, T = today, ←/→ = day, Ctrl+←/→ = week, 1–4 = tabs
+  document.addEventListener("keydown", (e) => {
+    if (e.altKey || e.metaKey || anyDialogOpen()) return;
+    const target = e.target;
+    if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+    const tabKeys = { 1: "plan", 2: "timetable", 3: "homework", 4: "tests" };
+    let handled = true;
+    if ((e.key === "n" || e.key === "N") && !e.shiftKey) $("addBtn").click();
+    else if ((e.key === "t" || e.key === "T") && !e.ctrlKey) { setTab("plan"); selectDate(todayISO()); }
+    else if (tabKeys[e.key] && !e.ctrlKey) setTab(tabKeys[e.key]);
+    else if (tab === "plan" && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      const dir = e.key === "ArrowLeft" ? -1 : 1;
+      if (e.ctrlKey) shiftWeek(dir);
+      else selectDate(toISO(addDays(fromISO(selected), dir)));
+    } else handled = false;
+    if (handled) e.preventDefault();
+  });
+
   // ---------- Toast ----------
   let toastTimer;
   function toast(msg, actionLabel, action) {
@@ -1395,6 +1424,7 @@
   }
 
   setupNative();
+  setupDesktop();
   render();
   setTimeout(maybeAskHomework, 400);
 })();

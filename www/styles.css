@@ -586,3 +586,14 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 /* A test ticked as "ready" isn't crossed out; past tests show their grade instead of a tick */
 .task.done[data-type="test"] .task-title { text-decoration: none; color: var(--text); }
 .task.test-past .check { visibility: hidden; }
+
+/* ===== PC / mouse ===== */
+@media (hover: hover) and (pointer: fine) {
+  .task-body:hover, .menu-item:hover, .day:not(.is-selected):hover, .tab:hover { background: var(--surface-2); }
+  .fab:hover { filter: brightness(1.08); }
+}
+/* On wide windows keep the + button next to the content column instead of the far edge */
+@media (min-width: 760px) {
+  .fab { right: calc(50% - 320px - 4px); }
+  .tabbar { padding-left: calc(50% - 320px); padding-right: calc(50% - 320px); }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "planner-desktop",
+  "productName": "Planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A private, offline planner for school (Windows app)",
+  "author": "Planner",
+  "main": "main.js",
+  "scripts": {
+    "copy-web": "node scripts/copy-web.js",
+    "start": "npm run copy-web && electron .",
+    "build": "npm run copy-web && electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^39.2.3",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "app.planner.local",
+    "productName": "Planner",
+    "files": ["main.js", "preload.js", "scheduler.js", "www/**/*"],
+    "directories": { "output": "dist" },
+    "win": {
+      "icon": "www/icons/icon-512.png",
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Planner-Setup.exe",
+      "shortcutName": "Planner"
+    },
+    "portable": {
+      "artifactName": "Planner-Portable.exe"
+    }
+  }
+}
