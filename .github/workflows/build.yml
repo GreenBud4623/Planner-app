@@ -113,6 +113,23 @@ jobs:
           path: out
           merge-multiple: true
 
+      # Only describe the files this build actually produced (the APK needs the SIGNING_KEY secret)
+      - name: Write release notes
+        run: |
+          {
+            if [ -f out/Planner.apk ]; then
+              echo "**Android:** download **Planner.apk** on your phone and tap it to install. It installs over the previous version and keeps your tasks."
+              echo
+            fi
+            if [ -f out/Planner-Setup.exe ]; then
+              echo "**Windows PC:** download **Planner-Setup.exe** and run it (or **Planner-Portable.exe** to run it without installing). If Windows shows \"Windows protected your PC\", click **More info → Run anyway**. Updating installs over the old version and keeps your tasks."
+            fi
+          } > notes.md
+          cat notes.md
+          if [ ! -f out/Planner.apk ]; then
+            echo "::warning::This release has no Android APK because the SIGNING_KEY secret is missing. See README › Automatic builds."
+          fi
+
       - name: Publish on the Releases page
         uses: softprops/action-gh-release@v2
         with:
@@ -120,8 +137,5 @@ jobs:
           name: Planner (build ${{ github.run_number }})
           target_commitish: ${{ github.sha }}
           make_latest: true
-          body: |
-            **Android:** download **Planner.apk** on your phone and tap it to install. It installs over the previous version and keeps your tasks.
-
-            **Windows PC:** download **Planner-Setup.exe** and run it (or **Planner-Portable.exe** to run it without installing). If Windows shows "Windows protected your PC", click **More info → Run anyway**. Updating installs over the old version and keeps your tasks.
+          body_path: notes.md
           files: out/*
