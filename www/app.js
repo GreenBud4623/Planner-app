@@ -67,6 +67,7 @@
   const Haptics = plugin("Haptics");
   const Files = plugin("Filesystem");
   const Share = plugin("Share");
+  const Widget = plugin("WidgetBridge"); // home-screen widget (android/app/.../PlannerWidget.java)
 
   // ---------- Storage ----------
   let memoryFallback = null; // used if localStorage is blocked (e.g. private mode)
@@ -147,6 +148,7 @@
       toast("Couldn't save — storage is blocked on this browser");
     }
     scheduleNotificationSync();
+    scheduleWidgetPush();
   }
 
   const isISO = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -1872,6 +1874,43 @@
     if (handled) e.preventDefault();
   });
 
+  // ---------- Home-screen widget (Android) ----------
+  // Sends a short summary for today and the next days; the widget shows the entry for the current date.
+  let widgetTimer;
+  function scheduleWidgetPush() {
+    if (!Widget) return;
+    clearTimeout(widgetTimer);
+    widgetTimer = setTimeout(pushWidget, 400);
+  }
+
+  function widgetSummary() {
+    const days = {};
+    const fmtTitle = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "short" });
+    for (let i = 0; i < 8; i++) {
+      const iso = toISO(addDays(new Date(), i));
+      const tomorrow = toISO(addDays(fromISO(iso), 1));
+      const holiday = holidayOn(iso);
+      const items = state.tasks.filter((t) => t.date === iso && (t.type === "test" || !t.done)).sort(sortTasks);
+      const icon = { test: "🧪 ", homework: "📝 ", recover: "↺ ", longterm: "🎯 " };
+      const nextDay = state.tasks.filter((t) => t.date === tomorrow && (t.type === "test" || (!t.done && t.type === "homework")));
+      const hw = nextDay.filter((t) => t.type === "homework").length, tests = nextDay.length - hw;
+      days[iso] = {
+        title: `${fmtTitle.format(fromISO(iso))}${usesWeeks() ? " · Week " + weekLetter(iso) : ""}`,
+        holiday: holiday ? holidayLabel(holiday) : "",
+        classes: holiday ? [] : lessonsOn(iso).map((c) => `${formatTime(c.start)}  ${c.name}${c.room ? " · " + c.room : ""}`),
+        due: items.slice(0, 8).map((t) => `${icon[t.type] || "• "}${t.className ? t.className + ": " : ""}${t.title}`),
+        tomorrow: hw || tests ? "Tomorrow: " + [hw ? `${hw} homework` : "", tests ? `${tests} test${tests > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ") : "",
+      };
+    }
+    return { updated: Date.now(), days };
+  }
+
+  function pushWidget() {
+    try {
+      Widget.update({ data: JSON.stringify(widgetSummary()) }).catch(() => {});
+    } catch { /* older app build without the widget */ }
+  }
+
   // ---------- Toast ----------
   let toastTimer;
   function toast(msg, actionLabel, action) {
@@ -2038,6 +2077,7 @@
     render();
     maybeAskHomework();
     autoBackup();
+    scheduleWidgetPush();
   }
   let wasHidden = false;
   document.addEventListener("visibilitychange", () => {
@@ -2070,4 +2110,5 @@
   render();
   setTimeout(maybeAskHomework, 400);
   setTimeout(() => autoBackup(), 3000);
+  scheduleWidgetPush();
 })();

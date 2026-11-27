@@ -4,4 +4,5 @@
     <string name="title_activity_main">Planner</string>
     <string name="package_name">app.planner.local</string>
     <string name="custom_url_scheme">app.planner.local</string>
+    <string name="widget_description">Today\'s classes and what\'s due</string>
 </resources>
