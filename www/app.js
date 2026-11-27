@@ -15,6 +15,8 @@
   const CLASS_COLORS = ["#16a34a", "#0891b2", "#4f46e5", "#d97706", "#dc2626", "#db2777", "#7c3aed", "#64748b"];
   const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const CHECK_LOOKBACK_DAYS = 7; // only ask about classes from the last week
+  const CHECK_HORIZON_DAYS = 42; // after-class notifications are planned this far ahead
+  const MAX_CHECK_NOTIFICATIONS = 250; // Android allows an app about 500 alarms in total
 
   // ---------- Dates (always local time) ----------
   const pad = (n) => String(n).padStart(2, "0");
@@ -67,7 +69,7 @@
   // ---------- Storage ----------
   let memoryFallback = null; // used if localStorage is blocked (e.g. private mode)
 
-  function emptyState() { return { tasks: [], classes: [], hwAnswered: {} }; }
+  function emptyState() { return { tasks: [], classes: [], hwAnswered: {}, holidays: [] }; }
 
   function load() {
     try {
@@ -87,8 +89,15 @@
       const cutoff = Date.now() - 30 * 864e5; // forget old answers
       for (const [k, v] of Object.entries(data.hwAnswered)) if (typeof v === "number" && v > cutoff) s.hwAnswered[k] = v;
     }
+    if (data && Array.isArray(data.holidays)) {
+      const old = toISO(addDays(new Date(), -90)); // forget holidays that ended long ago
+      s.holidays = data.holidays.filter(isValidHoliday).map(normalizeHoliday).filter((h) => h.to >= old);
+    }
     return s;
   }
+
+  function isValidHoliday(h) { return h && typeof h.id === "string" && isISO(h.from) && isISO(h.to) && h.from <= h.to; }
+  function normalizeHoliday(h) { return { id: h.id, name: typeof h.name === "string" ? h.name.slice(0, 60) : "", from: h.from, to: h.to }; }
 
   function save() {
     try {
@@ -179,6 +188,8 @@
     fMissed: $("fMissed"), missedField: $("missedField"),
     fGrade: $("fGrade"), gradeField: $("gradeField"), prioField: $("prioField"), fNotesLabel: $("fNotesLabel"),
     testSections: $("testSections"), testBadge: $("testBadge"),
+    holidayBox: $("holidayBox"), holidaySheet: $("holidaySheet"), holidayForm: $("holidayForm"), holidayTitle: $("holidayTitle"),
+    hName: $("hName"), hFrom: $("hFrom"), hTo: $("hTo"), holidayDeleteBtn: $("holidayDeleteBtn"),
     classActions: $("classActions"), caTitle: $("caTitle"), caWhen: $("caWhen"),
     classSheet: $("classSheet"), classForm: $("classForm"), classSheetTitle: $("classSheetTitle"),
     cName: $("cName"), classNames: $("classNames"), cDays: $("cDays"), cDaysLabel: $("cDaysLabel"),
@@ -187,7 +198,7 @@
     hwSheet: $("hwSheet"), hwForm: $("hwForm"), hwRows: $("hwRows"),
     menu: $("menuSheet"), importFile: $("importFile"), toast: $("toast"),
   };
-  const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.classActions, el.menu];
+  const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.classActions, el.holidaySheet, el.menu];
   const anyDialogOpen = () => dialogs().some((d) => d.open);
 
   // ---------- Classes helpers ----------
@@ -208,14 +219,26 @@
 
   const overlapsWith = (c) => state.classes.filter((o) => o.id !== c.id && o.day === c.day && o.start < c.end && c.start < o.end);
 
+  // ---------- Holidays & days off ----------
+  /** The holiday (or day off) that covers this date, if any. */
+  const holidayOn = (iso) => state.holidays.find((h) => h.from <= iso && iso <= h.to) || null;
+  const holidayLabel = (h) => h.name || (h.from === h.to ? "Day off" : "Holiday");
+
   /** Date (ISO) of the most recent lesson of a class with this name, on or before `onOrBeforeISO`. */
   function lastLessonDate(name, onOrBeforeISO = todayISO()) {
     const days = new Set(state.classes.filter((c) => c.name === name).map((c) => c.day));
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 60; i++) {
       const d = addDays(fromISO(onOrBeforeISO), -i);
-      if (days.has(weekdayIdx(d))) return toISO(d);
+      if (days.has(weekdayIdx(d)) && !holidayOn(toISO(d))) return toISO(d);
     }
     return onOrBeforeISO;
+  }
+
+  /** Answering for a lesson (missed it, or added its homework) means we don't ask about it again. */
+  function markLessonAnswered(name, iso) {
+    if (!name || !isISO(iso)) return;
+    const day = weekdayIdx(fromISO(iso));
+    state.classes.forEach((c) => { if (c.name === name && c.day === day) state.hwAnswered[`${c.id}@${iso}`] = Date.now(); });
   }
 
   const toRecoverCount = (name) => state.tasks.filter((t) => t.type === "recover" && !t.done && t.className === name).length;
@@ -224,9 +247,9 @@
   function nextLessonDate(name, afterISO) {
     const days = new Set(state.classes.filter((c) => c.name === name).map((c) => c.day));
     if (!days.size) return toISO(addDays(fromISO(afterISO), 1));
-    for (let i = 1; i <= 7; i++) {
+    for (let i = 1; i <= 120; i++) { // skips holidays, so may look past a long break
       const d = addDays(fromISO(afterISO), i);
-      if (days.has(weekdayIdx(d))) return toISO(d);
+      if (days.has(weekdayIdx(d)) && !holidayOn(toISO(d))) return toISO(d);
     }
     return toISO(addDays(fromISO(afterISO), 7));
   }
@@ -242,7 +265,7 @@
         if (weekdayIdx(d) !== c.day) continue;
         const iso = toISO(d);
         const end = atTime(iso, c.end);
-        if (end > now || end.getTime() < c.checkSince) continue;
+        if (end > now || end.getTime() < c.checkSince || holidayOn(iso)) continue;
         const key = `${c.id}@${iso}`;
         if (state.hwAnswered[key]) continue;
         out.push({ key, cls: c, date: iso, end });
@@ -395,6 +418,8 @@
       if (iso === today) b.classList.add("is-today");
       if (iso === selected) b.classList.add("is-selected");
       if (datesWithTasks.has(iso)) b.classList.add("has-tasks");
+      const hol = holidayOn(iso);
+      if (hol) { b.classList.add("is-holiday"); b.setAttribute("aria-label", `${fmtDay.format(d)}, ${holidayLabel(hol)}`); }
       b.innerHTML = `<span class="dow"></span><span class="num"></span><span class="dot"></span>`;
       b.querySelector(".dow").textContent = fmtDow.format(d).slice(0, 3);
       b.querySelector(".num").textContent = d.getDate();
@@ -424,10 +449,22 @@
       el.overdueText.textContent = `${overdue.length} unfinished task${overdue.length > 1 ? "s" : ""} from earlier days`;
     }
 
-    // Classes on this day
-    const classes = classesOn(weekdayIdx(d));
-    el.dayClasses.hidden = classes.length === 0;
+    // Classes on this day (none on holidays / days off)
+    const holiday = holidayOn(selected);
+    const classes = holiday ? [] : classesOn(weekdayIdx(d));
+    el.dayClasses.hidden = classes.length === 0 && !holiday;
     el.dayClasses.replaceChildren();
+    if (holiday) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "holiday-banner";
+      b.innerHTML = `<strong></strong><span class="muted small"></span>`;
+      b.querySelector("strong").textContent = `🏖 ${holidayLabel(holiday)} — no classes`;
+      b.querySelector("span").textContent = holiday.from === holiday.to ? "Homework check-ins are paused today"
+        : `Until ${fmtShort.format(fromISO(holiday.to))} · homework check-ins are paused`;
+      b.addEventListener("click", () => openHolidaySheet(holiday.id));
+      el.dayClasses.appendChild(b);
+    }
     if (classes.length) {
       const h = document.createElement("h3");
       h.className = "section-title";
@@ -451,14 +488,14 @@
         row.querySelector(".class-row-main").addEventListener("click", () => openClassActions(c));
         const hb = row.querySelector(".mini-btn");
         hb.setAttribute("aria-label", `Add homework for ${c.name}`);
-        hb.addEventListener("click", () => openTaskSheet(null, { type: "homework", className: c.name, date: nextLessonDate(c.name, selected) }));
+        hb.addEventListener("click", () => openTaskSheet(null, { type: "homework", className: c.name, date: nextLessonDate(c.name, selected), lessonDate: selected }));
         parent.appendChild(row);
        }
       }
     }
 
     el.list.replaceChildren(...tasks.map((t) => renderTask(t)));
-    el.empty.hidden = tasks.length > 0 || classes.length > 0;
+    el.empty.hidden = tasks.length > 0 || classes.length > 0 || !!holiday;
   }
 
   /** A box that holds classes taking place at the same time. */
@@ -474,9 +511,40 @@
   }
 
   // ---------- Rendering: Timetable ----------
+  function renderHolidays() {
+    const today = todayISO();
+    const list = state.holidays.filter((h) => h.to >= today).sort((a, b) => a.from.localeCompare(b.from));
+    el.holidayBox.replaceChildren();
+    const head = document.createElement("div");
+    head.className = "holiday-head";
+    head.innerHTML = `<h3 class="section-title">Holidays &amp; days off</h3><button type="button" class="mini-btn">+ Add</button>`;
+    head.querySelector(".mini-btn").setAttribute("aria-label", "Add a holiday or day off");
+    head.querySelector(".mini-btn").addEventListener("click", () => openHolidaySheet());
+    el.holidayBox.appendChild(head);
+    if (!list.length) {
+      const p = document.createElement("p");
+      p.className = "muted small";
+      p.textContent = "Add school holidays or sick days — no homework questions or class notifications on those days.";
+      el.holidayBox.appendChild(p);
+      return;
+    }
+    for (const h of list) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "holiday-row" + (h.from <= today ? " is-now" : "");
+      b.innerHTML = `<span class="hr-name"></span><span class="hr-dates muted small"></span>`;
+      b.querySelector(".hr-name").textContent = `🏖 ${holidayLabel(h)}${h.from <= today ? " · now" : ""}`;
+      b.querySelector(".hr-dates").textContent = h.from === h.to ? fmtShort.format(fromISO(h.from))
+        : `${fmtShort.format(fromISO(h.from))} – ${fmtShort.format(fromISO(h.to))}`;
+      b.addEventListener("click", () => openHolidaySheet(h.id));
+      el.holidayBox.appendChild(b);
+    }
+  }
+
   function renderTimetable() {
     el.pageTitle.textContent = "Timetable";
     el.ttIntro.hidden = state.classes.length > 0;
+    renderHolidays();
     el.ttList.replaceChildren();
     const todayIdx = weekdayIdx(new Date());
     for (let day = 0; day < 7; day++) {
@@ -697,8 +765,10 @@
     el.remindField.hidden = !(Notif && (el.fTime.value || currentType() === "test"));
   }
 
+  let lessonContext = null; // the lesson a new homework item was added from (see markLessonAnswered)
   function openTaskSheet(id = null, preset = {}) {
     editingId = id;
+    lessonContext = id ? null : (preset.lessonDate || null);
     const t = id ? state.tasks.find((x) => x.id === id) : null;
     const type = t ? t.type : preset.type || ({ homework: "homework", tests: "test" }[tab] || "task");
     el.form.elements.type.value = type;
@@ -749,6 +819,9 @@
       if (t) Object.assign(t, data);
     } else {
       state.tasks.push(normalizeTask({ ...data, id: newId(), done: false, createdAt: Date.now() }));
+      // Missed this lesson, or added its homework from the class: don't ask "What homework did you get?" about it
+      if (type === "recover") markLessonAnswered(data.className, data.missedDate);
+      if (type === "homework" && lessonContext) markLessonAnswered(data.className, lessonContext);
     }
     save();
     closeTaskSheet();
@@ -901,6 +974,48 @@
     toast("Class deleted", "Undo", () => { state.classes.push(removed); save(); render(); });
   }
 
+  // ---------- Holiday / day-off sheet ----------
+  let editingHolidayId = null;
+  function openHolidaySheet(id = null) {
+    editingHolidayId = id;
+    const h = id ? state.holidays.find((x) => x.id === id) : null;
+    el.holidayTitle.textContent = h ? "Edit holiday" : "Holiday or day off";
+    el.hName.value = h ? h.name : "";
+    el.hFrom.value = h ? h.from : todayISO();
+    el.hTo.value = h ? h.to : todayISO();
+    el.holidayDeleteBtn.hidden = !h;
+    el.holidaySheet.showModal();
+  }
+
+  function saveHolidayFromForm() {
+    const from = el.hFrom.value, to = el.hTo.value;
+    if (!from) { el.hFrom.focus(); return; }
+    if (!to) { el.hTo.focus(); return; }
+    if (to < from) { toast("The last day has to be on or after the first day"); el.hTo.focus(); return; }
+    const data = { name: el.hName.value.trim().slice(0, 60), from, to };
+    if (editingHolidayId) {
+      const h = state.holidays.find((x) => x.id === editingHolidayId);
+      if (h) Object.assign(h, data);
+    } else {
+      state.holidays.push({ id: newId(), ...data });
+    }
+    save();
+    el.holidaySheet.close();
+    render();
+    toast(from === to ? `${relDay(from) === "today" ? "Today" : cap(relDay(from))} is a day off — no class questions`
+      : `No class questions until ${fmtShort.format(fromISO(to))}`);
+  }
+
+  function deleteHoliday(id) {
+    const idx = state.holidays.findIndex((x) => x.id === id);
+    if (idx < 0) return;
+    const [removed] = state.holidays.splice(idx, 1);
+    save();
+    el.holidaySheet.close();
+    render();
+    toast("Holiday removed", "Undo", () => { state.holidays.push(removed); save(); render(); });
+  }
+
   // ---------- Homework check-in ("What homework did you get?") ----------
   function openHomeworkCheck(force = false) {
     const pending = pendingChecks().filter((p) => force || !hwSnoozed.has(p.key));
@@ -1000,7 +1115,7 @@
   // ---------- Backup ----------
   const backupName = () => `planner-backup-${todayISO()}.json`;
   const backupJSON = () =>
-    JSON.stringify({ app: "planner", version: 4, exportedAt: new Date().toISOString(), ...state }, null, 2);
+    JSON.stringify({ app: "planner", version: 5, exportedAt: new Date().toISOString(), ...state }, null, 2);
 
   async function exportBackup() {
     if (Files) {
@@ -1054,6 +1169,8 @@
         state.tasks.push(...newTasks);
         state.classes.push(...newClasses);
         Object.assign(state.hwAnswered, incoming.hwAnswered);
+        const haveH = new Set(state.holidays.map((h) => h.id));
+        state.holidays.push(...incoming.holidays.filter((h) => !haveH.has(h.id)));
         save();
         el.menu.close();
         render();
@@ -1144,22 +1261,46 @@
           extra: { kind: "reminder", date: t.date, taskId: t.id },
         }));
 
-      // One weekly repeating check-in per class with "Weekly homework", fired when the class ends.
-      const checks = state.classes.filter((c) => c.homeworkCheck).slice(0, 40).map((c) => {
-        const [hour, minute] = c.end.split(":").map(Number);
-        return {
-          id: hashId("hw:" + c.id),
-          title: `Homework for ${c.name}?`,
-          body: "Class is over. Did you get any homework?",
-          // Capacitor weekdays: Sunday = 1 … Saturday = 7
-          schedule: { on: { weekday: ((c.day + 1) % 7) + 1, hour, minute }, allowWhileIdle: true },
+      // A check-in when each lesson with "Weekly homework" ends, for the next few weeks.
+      // One notification per lesson (not a weekly repeat) so holidays and days off can be skipped.
+      // The list is rebuilt every time the app opens or anything changes.
+      const checks = [];
+      const hwClasses = state.classes.filter((c) => c.homeworkCheck);
+      for (let i = 0; i < CHECK_HORIZON_DAYS && hwClasses.length; i++) {
+        const iso = toISO(addDays(new Date(), i));
+        if (holidayOn(iso)) continue;
+        for (const c of hwClasses) {
+          if (c.day !== weekdayIdx(fromISO(iso)) || state.hwAnswered[`${c.id}@${iso}`]) continue;
+          const at = atTime(iso, c.end).getTime();
+          if (at <= now + 1000) continue;
+          checks.push({
+            id: hashId(`hw:${c.id}@${iso}`),
+            title: `Homework for ${c.name}?`,
+            body: "Class is over. Did you get any homework?",
+            schedule: { at: new Date(at), allowWhileIdle: true },
+            channelId: "homework",
+            actionTypeId: "HW_CHECK",
+            smallIcon: "ic_stat_planner",
+            iconColor: "#15803d",
+            extra: { kind: "hwcheck", classId: c.id, date: iso },
+          });
+        }
+      }
+      checks.splice(MAX_CHECK_NOTIFICATIONS);
+      if (checks.length) {
+        // If the app isn't opened for weeks, the check-ins run out: remind to open it before that happens
+        const lastAt = Math.max(...checks.map((n) => n.schedule.at.getTime()));
+        checks.push({
+          id: hashId("hw:keepalive"),
+          title: "Keep your homework check-ins going",
+          body: "Open Planner so it can plan the next weeks of after-class questions.",
+          schedule: { at: new Date(lastAt - 864e5), allowWhileIdle: true },
           channelId: "homework",
-          actionTypeId: "HW_CHECK",
           smallIcon: "ic_stat_planner",
           iconColor: "#15803d",
-          extra: { kind: "hwcheck", classId: c.id },
-        };
-      });
+          extra: { kind: "keepalive" },
+        });
+      }
 
       const pending = await Notif.getPending();
       if (pending.notifications.length) {
@@ -1181,14 +1322,15 @@
     if (extra.kind === "hwcheck") {
       const cls = state.classes.find((c) => c.id === extra.classId);
       if (!cls) return;
-      const key = `${cls.id}@${lastEndedLesson(cls)}`;
+      const lesson = isISO(extra.date) ? extra.date : lastEndedLesson(cls);
+      const key = `${cls.id}@${lesson}`;
       const text = (a.inputValue || "").trim();
       if (a.actionId === "none") {
         state.hwAnswered[key] = Date.now();
         save(); render();
         toast(`Got it — no homework for ${cls.name}`);
       } else if (a.actionId === "absent") {
-        addRecover(cls, lastEndedLesson(cls));
+        addRecover(cls, lesson);
         state.hwAnswered[key] = Date.now();
         save(); render();
         toast(`${cls.name} added to To recover`);
@@ -1335,7 +1477,7 @@
 
   $("caHomework").addEventListener("click", () => {
     el.classActions.close();
-    openTaskSheet(null, { type: "homework", className: actionClass.name, date: nextLessonDate(actionClass.name, selected) });
+    openTaskSheet(null, { type: "homework", className: actionClass.name, date: nextLessonDate(actionClass.name, selected), lessonDate: selected });
   });
   $("caMissed").addEventListener("click", () => {
     el.classActions.close();
@@ -1347,6 +1489,15 @@
     openTaskSheet(null, { type: "test", className: actionClass.name, date: nextLessonDate(actionClass.name, selected) });
   });
   $("caClose").addEventListener("click", () => el.classActions.close());
+
+  el.holidayForm.addEventListener("submit", (e) => { e.preventDefault(); saveHolidayFromForm(); });
+  $("holidayCancelBtn").addEventListener("click", () => el.holidaySheet.close());
+  el.holidayDeleteBtn.addEventListener("click", () => editingHolidayId && deleteHoliday(editingHolidayId));
+  el.holidaySheet.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => {
+    const today = new Date();
+    el.hFrom.value = toISO(today);
+    el.hTo.value = toISO(b.dataset.range === "week" ? addDays(today, 6 - weekdayIdx(today)) : addDays(today, Number(b.dataset.range)));
+  }));
 
   el.hwForm.addEventListener("submit", (e) => { e.preventDefault(); saveHomeworkCheck(); });
   $("hwLaterBtn").addEventListener("click", snoozeHomeworkCheck);

@@ -597,3 +597,24 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   .fab { right: calc(50% - 320px - 4px); }
   .tabbar { padding-left: calc(50% - 320px); padding-right: calc(50% - 320px); }
 }
+
+/* ===== Holidays & days off ===== */
+.holiday-box { margin: 0 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.holiday-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.holiday-head .section-title { margin: 8px 0; }
+.holiday-box > p { margin: 0 0 4px; }
+.holiday-row, .holiday-banner {
+  width: 100%;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px dashed var(--accent);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.holiday-row.is-now, .holiday-banner { background: var(--accent-soft); border-style: solid; }
+.holiday-banner { margin: 8px 0 0; }
+.hr-name { font-weight: 600; }
+.quick-ranges { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.day.is-holiday:not(.is-selected) { outline: 1.5px dashed var(--accent); outline-offset: -3px; }

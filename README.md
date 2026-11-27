@@ -15,6 +15,9 @@ The app has four tabs:
 **Timetable** holds your weekly classes. For each class you set the day(s), times, room or teacher, and a colour. Classes can overlap (for example optional subjects or split groups). They're shown together in an "At the same time" box. Tick **Weekly homework** and after every lesson:
 - you get a notification asking *"Homework for Maths?"*. You can type the homework right in the notification, or tap **No homework** or **I was absent**.
 - if you didn't answer, a popup asks **"What homework did you get?"** for each class the next time you open the app. Tap **Later** and it asks again the next time you open it.
+- if you already marked the lesson as missed, or added its homework from the class, it doesn't ask.
+
+**Holidays & days off** (top of the Timetable tab): add school holidays or sick days, with quick buttons for *Just today*, *Today + tomorrow* and *Rest of the week*. On those days classes are hidden, there are no after-class notifications or homework questions, and suggested due dates skip to the first lesson after the break. Upcoming check-in notifications are planned 6 weeks ahead and refreshed whenever you open the app.
 
 **Homework** lists:
 - **Past due**: anything not done whose date has passed, in red, with a badge on the tab
@@ -60,7 +63,7 @@ Don't want to install? Download `Planner-Portable.exe` instead and just run it.
 
 Every push to this repo builds a signed `Planner.apk` and the Windows `Planner-Setup.exe` / `Planner-Portable.exe` with GitHub Actions and posts them on the **Releases** page. Open the newest release, download the file for your device, and open it. It installs over the old version and keeps your tasks.
 
-The Windows app builds without any setup. The APK needs the app's signing key saved as a repository secret, once:
+The Windows app builds without any setup. The APK needs the app's signing key saved as a repository secret, once. Until then, releases only contain the Windows files, and the release notes say so:
 
 1. Repo **Settings → Secrets and variables → Actions → New repository secret**
 2. Name: `SIGNING_KEY`

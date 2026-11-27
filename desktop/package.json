@@ -1,7 +1,7 @@
 {
   "name": "planner-desktop",
   "productName": "Planner",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "private": true,
   "description": "A private, offline planner for school (Windows app)",
   "author": "Planner",
