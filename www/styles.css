@@ -663,3 +663,16 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .kind-seg { grid-template-columns: repeat(4, 1fr); }
 .kind-seg span { font-size: 13px; }
 .kind-seg input:checked + span { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* Evening heads-up setting */
+.evening-row { align-items: center; justify-content: space-between; }
+.evening-label { display: flex; align-items: flex-start; gap: 12px; flex: 1; min-width: 0; }
+.evening-label > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.evening-label input { position: absolute; opacity: 0; pointer-events: none; }
+.evening-label input:checked + .check-box { background: var(--accent); border-color: var(--accent); }
+.evening-label input:checked + .check-box::after {
+  content: ""; width: 6px; height: 11px; margin-top: -2px;
+  border: solid var(--accent-ink); border-width: 0 3px 3px 0; transform: rotate(45deg);
+}
+.evening-label input:focus-visible + .check-box { outline: 2px solid var(--accent); outline-offset: 2px; }
+.evening-row #eveningTime { width: 120px; flex: none; }

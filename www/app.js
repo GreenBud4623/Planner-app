@@ -232,6 +232,7 @@
     gradeSheet: $("gradeSheet"), gradeForm: $("gradeForm"), gradeTitle: $("gradeTitle"), gValue: $("gValue"), gDate: $("gDate"),
     gClass: $("gClass"), gNote: $("gNote"), gradeDeleteBtn: $("gradeDeleteBtn"),
     autoRow: $("autoRow"), autoToggle: $("autoToggle"), autoStatus: $("autoStatus"),
+    eveningRow: $("eveningRow"), eveningToggle: $("eveningToggle"), eveningTime: $("eveningTime"),
     holidayBox: $("holidayBox"), holidaySheet: $("holidaySheet"), holidayForm: $("holidayForm"), holidayTitle: $("holidayTitle"),
     hName: $("hName"), hFrom: $("hFrom"), hTo: $("hTo"), holidayDeleteBtn: $("holidayDeleteBtn"),
     classActions: $("classActions"), caTitle: $("caTitle"), caWhen: $("caWhen"),
@@ -1438,8 +1439,9 @@
   const AUTO_FILE = /^planner-auto-\d{4}-\d{2}-\d{2}\.json$/;
   const canAutoBackup = () => !!(Files || (Desktop && Desktop.backup));
   function loadSettings() {
-    try { return Object.assign({ autoBackup: true, lastAutoBackup: 0 }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); }
-    catch { return { autoBackup: true, lastAutoBackup: 0 }; }
+    const defaults = { autoBackup: true, lastAutoBackup: 0, evening: true, eveningTime: "19:00" };
+    try { return Object.assign(defaults, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); }
+    catch { return defaults; }
   }
   function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* not important */ } }
   let settings = loadSettings();
@@ -1473,7 +1475,15 @@
     }
   }
 
+  function renderEveningSetting() {
+    el.eveningRow.hidden = !Notif;
+    el.eveningToggle.checked = !!settings.evening;
+    el.eveningTime.value = settings.eveningTime || "19:00";
+    el.eveningTime.disabled = !settings.evening;
+  }
+
   function renderBackupStatus() {
+    renderEveningSetting();
     el.autoRow.hidden = !canAutoBackup();
     el.autoToggle.checked = !!settings.autoBackup;
     const last = settings.lastAutoBackup;
@@ -1601,11 +1611,36 @@
         });
       }
 
+      // Evening heads-up: what's due tomorrow (homework, tests, lessons to recover), planned two weeks ahead
+      const evening = [];
+      if (settings.evening) {
+        for (let i = 0; i < 14; i++) {
+          const iso = toISO(addDays(new Date(), i));
+          const tomorrow = toISO(addDays(fromISO(iso), 1));
+          const at = atTime(iso, settings.eveningTime || "19:00").getTime();
+          if (at <= now + 1000) continue;
+          const due = state.tasks.filter((t) => t.date === tomorrow &&
+            ((t.type === "test") || (!t.done && (t.type === "homework" || t.type === "recover"))));
+          if (!due.length) continue;
+          const count = (type, one, many) => { const n = due.filter((t) => t.type === type).length; return n ? `${n} ${n === 1 ? one : many}` : ""; };
+          evening.push({
+            id: hashId("evening:" + iso),
+            title: "Tomorrow: " + [count("homework", "homework", "homework"), count("test", "test", "tests"), count("recover", "class to recover", "classes to recover")].filter(Boolean).join(" · "),
+            body: due.map((t) => (t.type === "test" ? "🧪 " : t.type === "recover" ? "↺ " : "") + (t.className ? `${t.className}: ` : "") + t.title).join(" · ").slice(0, 300),
+            schedule: { at: new Date(at), allowWhileIdle: true },
+            channelId: "reminders",
+            smallIcon: "ic_stat_planner",
+            iconColor: "#15803d",
+            extra: { kind: "evening", date: tomorrow },
+          });
+        }
+      }
+
       const pending = await Notif.getPending();
       if (pending.notifications.length) {
         await Notif.cancel({ notifications: pending.notifications.map((n) => ({ id: Number(n.id) })) });
       }
-      const all = [...reminders, ...checks];
+      const all = [...reminders, ...evening, ...checks];
       if (!all.length) return;
       const perm = await Notif.checkPermissions();
       if (perm.display !== "granted") return;
@@ -1808,6 +1843,17 @@
     saveSettings();
     renderBackupStatus();
     if (settings.autoBackup) autoBackup(true).then((ok) => ok && toast("Backup saved"));
+  });
+  el.eveningToggle.addEventListener("change", () => {
+    settings.evening = el.eveningToggle.checked;
+    saveSettings(); renderEveningSetting(); scheduleNotificationSync();
+    if (settings.evening) ensureNotificationPermission();
+  });
+  el.eveningTime.addEventListener("change", () => {
+    if (!isHHMM(el.eveningTime.value)) return;
+    settings.eveningTime = el.eveningTime.value;
+    saveSettings(); scheduleNotificationSync();
+    toast(`Evening heads-up at ${formatTime(settings.eveningTime)}`);
   });
   $("restoreMerge").addEventListener("click", () => applyRestore("merge"));
   $("gsClose").addEventListener("click", () => { el.gradesSheet.close(); gradesSheetClass = null; });
