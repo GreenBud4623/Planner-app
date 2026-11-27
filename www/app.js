@@ -9,6 +9,8 @@
   const STORAGE_KEY = "planner.v1";
   const PRIORITY_RANK = { high: 0, med: 1, low: 2 };
   const PRIORITY_LABEL = { high: "High", med: "Medium", low: "Low" };
+  const REPEATS = { none: "Doesn't repeat", daily: "Every day", weekdays: "Every weekday (Mon–Fri)", weekly: "Every week", monthly: "Every month" };
+  const REPEAT_SHORT = { daily: "Daily", weekdays: "Weekdays", weekly: "Weekly", monthly: "Monthly" };
   const TYPES = ["task", "homework", "longterm", "recover", "test"];
   const CLASS_TYPES = ["homework", "recover", "test"]; // item types linked to a class
   const DATELESS_TYPES = ["longterm", "recover"]; // date is optional for these
@@ -175,6 +177,14 @@
       // for "test": the mark you got, written after the test
       grade: type === "test" && typeof t.grade === "string" ? t.grade.slice(0, 20) : "",
       updatedAt: typeof t.updatedAt === "number" ? t.updatedAt : (typeof t.createdAt === "number" ? t.createdAt : 0),
+      // plain tasks can repeat; ticking one off creates the next (nextId remembers it)
+      repeat: type === "task" && REPEATS[t.repeat] ? t.repeat : "none",
+      nextId: typeof t.nextId === "string" ? t.nextId : "",
+      // checklist steps
+      steps: type !== "test" && Array.isArray(t.steps) ? t.steps
+        .filter((x) => x && typeof x.text === "string" && x.text.trim())
+        .slice(0, 30)
+        .map((x) => ({ id: typeof x.id === "string" ? x.id : newId(), text: x.text.trim().slice(0, 200), done: !!x.done })) : [],
     };
   }
 
@@ -227,7 +237,8 @@
     fTime: $("fTime"), fNotes: $("fNotes"), fRemind: $("fRemind"), remindField: $("remindField"),
     fClass: $("fClass"), classField: $("classField"), deleteBtn: $("deleteBtn"),
     fMissed: $("fMissed"), missedField: $("missedField"),
-    fGrade: $("fGrade"), gradeField: $("gradeField"), prioField: $("prioField"), fNotesLabel: $("fNotesLabel"),
+    fGrade: $("fGrade"), gradeField: $("gradeField"),
+    fRepeat: $("fRepeat"), repeatField: $("repeatField"), stepsField: $("stepsField"), stepsList: $("stepsList"), prioField: $("prioField"), fNotesLabel: $("fNotesLabel"),
     testSections: $("testSections"), testBadge: $("testBadge"),
     restoreSheet: $("restoreSheet"), restoreInfo: $("restoreInfo"),
     gradesSheet: $("gradesSheet"), gsTitle: $("gsTitle"), gsSub: $("gsSub"), gsAvg: $("gsAvg"), gsList: $("gsList"),
@@ -409,8 +420,17 @@
     if (t.time) add("🕒 " + formatTime(t.time) + (Notif && t.remind !== null && !t.done ? " 🔔" : ""));
     if (!opts.showDate && t.type === "longterm") add("Deadline");
     if (!opts.showDate && t.type === "recover") add("Recover by today");
+    if (t.repeat !== "none") add("🔁 " + REPEAT_SHORT[t.repeat]);
+    if (t.steps.length) add(`☑ ${t.steps.filter((x) => x.done).length}/${t.steps.length}`, "steps-count");
     if (t.type !== "test" && (t.priority !== "med" || t.type === "task")) add(PRIORITY_LABEL[t.priority] + " priority");
     meta.querySelectorAll("span:empty").forEach((x) => x.remove());
+    if (t.steps.length) {
+      const bar = document.createElement("div");
+      bar.className = "steps-bar";
+      bar.innerHTML = "<div></div>";
+      bar.firstChild.style.width = `${(t.steps.filter((x) => x.done).length / t.steps.length) * 100}%`;
+      li.querySelector(".task-body").appendChild(bar);
+    }
 
     if (t.notes) {
       const n = document.createElement("div");
@@ -925,13 +945,46 @@
   }
 
   // ---------- Tasks ----------
+  /** The date after `iso` for a repeat rule. */
+  function nextRepeatDate(iso, rule) {
+    const d = fromISO(iso);
+    if (rule === "daily") return toISO(addDays(d, 1));
+    if (rule === "weekly") return toISO(addDays(d, 7));
+    if (rule === "weekdays") { let n = addDays(d, 1); while (weekdayIdx(n) > 4) n = addDays(n, 1); return toISO(n); }
+    if (rule === "monthly") {
+      const want = d.getDate();
+      const n = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      const last = new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate();
+      n.setDate(Math.min(want, last)); // 31 Jan -> 28/29 Feb
+      return toISO(n);
+    }
+    return iso;
+  }
+
+  /** Ticking off a repeating task creates the next one (once), never in the past. */
+  function spawnNext(t) {
+    if (t.repeat === "none" || !t.date) return null;
+    if (t.nextId && state.tasks.some((x) => x.id === t.nextId)) return null;
+    let date = nextRepeatDate(t.date, t.repeat);
+    for (let i = 0; i < 400 && date < todayISO(); i++) date = nextRepeatDate(date, t.repeat);
+    const next = normalizeTask({
+      ...t, id: newId(), date, done: false, createdAt: Date.now(), nextId: "",
+      steps: t.steps.map((x) => ({ ...x, id: newId(), done: false })),
+    });
+    state.tasks.push(next);
+    t.nextId = next.id;
+    return next;
+  }
+
   function toggleDone(id) {
     const t = state.tasks.find((x) => x.id === id);
     if (!t) return;
     t.done = !t.done;
     touch(t);
+    const next = t.done ? spawnNext(t) : null;
     save();
     render();
+    if (next) toast(`🔁 Next one: ${relDay(next.date) === "today" ? "today" : fmtShort.format(fromISO(next.date))}`);
     if (t.done) {
       if (Haptics) Haptics.impact({ style: "LIGHT" }).catch(() => {});
       else if (navigator.vibrate) navigator.vibrate(15);
@@ -955,6 +1008,8 @@
     el.missedField.hidden = type !== "recover";
     el.gradeField.hidden = type !== "test" || !editingId;
     el.prioField.hidden = type === "test";
+    el.repeatField.hidden = type !== "task";
+    el.stepsField.hidden = type === "test";
     el.fTitleLabel.innerHTML = type === "homework" ? "Homework" : type === "longterm" ? "Long-term task" :
       type === "recover" ? "What to recover <em>(optional)</em>" : type === "test" ? "Test <em>(topic)</em>" : "Task";
     el.fTitle.placeholder = type === "homework" ? "e.g. Exercises 1–5, page 42" :
@@ -1009,6 +1064,8 @@
     el.fDate.value = date || "";
     el.fTime.value = t ? t.time : "";
     el.fNotes.value = t ? t.notes : "";
+    el.fRepeat.value = t ? t.repeat : "none";
+    renderStepsEditor(t ? t.steps : []);
     el.form.elements.priority.value = t ? t.priority : "med";
     el.deleteBtn.hidden = !t;
     updateTypeFields(); // also sets the reminder choices for this type
@@ -1019,6 +1076,35 @@
   }
 
   function closeTaskSheet() { el.sheet.close(); editingId = null; }
+
+  // Checklist editor in the task sheet
+  function stepRow(step = { id: newId(), text: "", done: false }) {
+    const li = document.createElement("li");
+    li.className = "step-row";
+    li.dataset.id = step.id;
+    li.innerHTML = `<label class="step-check"><input type="checkbox"><span class="check-box" aria-hidden="true"></span></label>
+      <input class="step-text" type="text" maxlength="200" placeholder="Step" autocomplete="off">
+      <button class="step-remove icon-btn small" type="button" aria-label="Remove step">✕</button>`;
+    li.querySelector("input[type=checkbox]").checked = step.done;
+    li.querySelector("input[type=checkbox]").setAttribute("aria-label", "Step done");
+    li.querySelector(".step-text").value = step.text;
+    li.querySelector(".step-remove").addEventListener("click", () => li.remove());
+    li.querySelector(".step-text").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); addStep(); }
+    });
+    return li;
+  }
+  function renderStepsEditor(steps) { el.stepsList.replaceChildren(...steps.map(stepRow)); }
+  function addStep() {
+    const row = stepRow();
+    el.stepsList.appendChild(row);
+    row.querySelector(".step-text").focus();
+  }
+  function readStepsEditor() {
+    return [...el.stepsList.querySelectorAll(".step-row")]
+      .map((li) => ({ id: li.dataset.id, text: li.querySelector(".step-text").value.trim(), done: li.querySelector("input[type=checkbox]").checked }))
+      .filter((x) => x.text);
+  }
 
   function saveTaskFromForm() {
     const type = currentType();
@@ -1038,6 +1124,8 @@
       grade: type === "test" ? el.fGrade.value.trim() : "",
       className: CLASS_TYPES.includes(type) ? el.fClass.value : "",
       missedDate: type === "recover" ? el.fMissed.value : "",
+      repeat: type === "task" && el.fDate.value ? el.fRepeat.value : "none",
+      steps: type === "test" ? [] : readStepsEditor(),
     };
     if (editingId) {
       const t = state.tasks.find((x) => x.id === editingId);
@@ -1835,6 +1923,7 @@
     if (currentType() === "recover") el.fMissed.value = lastLessonDate(el.fClass.value);
   });
   el.fTime.addEventListener("input", updateRemindField);
+  $("addStepBtn").addEventListener("click", addStep);
   el.fTime.addEventListener("change", updateRemindField);
 
   buildClassFormControls();

@@ -153,6 +153,17 @@
         </label>
       </div>
 
+      <label id="repeatField" class="field" hidden>
+        <span>Repeat</span>
+        <select id="fRepeat">
+          <option value="none">Doesn't repeat</option>
+          <option value="daily">Every day</option>
+          <option value="weekdays">Every weekday (Mon–Fri)</option>
+          <option value="weekly">Every week</option>
+          <option value="monthly">Every month</option>
+        </select>
+      </label>
+
       <label id="remindField" class="field" hidden>
         <span>Reminder</span>
         <select id="fRemind" name="remind">
@@ -183,6 +194,12 @@
         <span id="fNotesLabel">Notes <em>(optional)</em></span>
         <textarea id="fNotes" name="notes" rows="3" maxlength="2000"></textarea>
       </label>
+
+      <fieldset id="stepsField" class="field">
+        <legend>Checklist <em>(optional)</em></legend>
+        <ul id="stepsList" class="steps"></ul>
+        <button id="addStepBtn" class="mini-btn add-step" type="button">+ Add step</button>
+      </fieldset>
 
       <div class="sheet-actions">
         <button id="deleteBtn" class="btn danger" type="button" hidden>Delete</button>

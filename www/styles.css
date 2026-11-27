@@ -688,3 +688,21 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .week-ab > span { display: flex; flex-direction: column; gap: 2px; }
 .week-ab .mini-btn { background: var(--surface); }
 .weeks-seg input:checked + span { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* Checklists */
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.step-row { display: flex; align-items: center; gap: 8px; }
+.step-row .step-text { flex: 1; min-height: 40px; padding: 8px 10px; }
+.step-check { position: relative; display: grid; place-items: center; }
+.step-check input { position: absolute; opacity: 0; width: 24px; height: 24px; margin: 0; }
+.step-check input:checked + .check-box { background: var(--accent); border-color: var(--accent); }
+.step-check input:checked + .check-box::after {
+  content: ""; width: 6px; height: 11px; margin-top: -2px;
+  border: solid var(--accent-ink); border-width: 0 3px 3px 0; transform: rotate(45deg);
+}
+.step-check input:focus-visible + .check-box { outline: 2px solid var(--accent); outline-offset: 2px; }
+.step-row:has(input:checked) .step-text { text-decoration: line-through; color: var(--muted); }
+.add-step { align-self: flex-start; margin-top: 2px; }
+.steps-bar { height: 4px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.steps-bar > div { height: 100%; background: var(--accent); border-radius: inherit; }
+.task-meta .steps-count { font-weight: 650; }
