@@ -1,0 +1,42 @@
+name: Tests
+
+# Runs the automated tests (tests/*.test.js) on every push and pull request:
+# the app in a phone-sized browser with a stand-in for Android, plus the Windows app's helpers.
+on:
+  push:
+    paths:
+      - "www/**"
+      - "tests/**"
+      - "desktop/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/test.yml"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run the tests
+        run: npm test

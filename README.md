@@ -35,6 +35,7 @@ Also:
 - Tick tasks off, with a progress bar for each day
 - "Move to today" for unfinished tasks from earlier days
 - Undo after deleting a task
+- **Evening heads-up** (Android and Windows apps): at 7 PM a notification lists what's due tomorrow: homework, tests and classes to recover. Change the time or switch it off in the ••• menu.
 - **Automatic daily backup** (Android and Windows apps, on by default): once a day a copy is saved to **Documents › Planner › Auto backups**, keeping the last 7. Files there survive uninstalling the app. You can switch it off in the ••• menu.
 - Backups by hand (in the ••• menu): save a file to **Documents › Planner**, or send one to Drive or email.
 - **Restore** from any backup file and choose **Merge** (adds what's missing and keeps the newest version of everything; things you deleted stay deleted) or **Replace everything** (makes the device exactly like the backup). Both can be undone right after.
@@ -99,6 +100,10 @@ npm run build    # makes desktop/dist/Planner-Setup.exe and Planner-Portable.exe
 ```
 
 `npm start` and `npm run build` first copy `www/` into `desktop/www` (a git-ignored build copy), so always edit the files in `www/`.
+
+## Tests
+
+`npm test` runs the automated tests in `tests/`: the app in a phone-sized browser with a stand-in for Android, with the clock fixed so results don't depend on the day. GitHub runs them on every push (`.github/workflows/test.yml`). The first time, run `npm ci` and `npx playwright install chromium`.
 
 ## Project layout
 
