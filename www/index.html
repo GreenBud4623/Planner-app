@@ -335,6 +335,65 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
   </dialog>
 
+  <!-- Grades of one class -->
+  <dialog id="gradesSheet" class="sheet">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="grades-head">
+      <div>
+        <h3 id="gsTitle"></h3>
+        <p id="gsSub" class="muted small"></p>
+      </div>
+      <div id="gsAvg" class="avg-big"></div>
+    </div>
+    <ul id="gsList" class="grade-list"></ul>
+    <div class="sheet-actions">
+      <button id="gsAdd" class="btn ghost" type="button">+ Add grade</button>
+      <span class="spacer"></span>
+      <button id="gsClose" class="btn primary" type="button">Done</button>
+    </div>
+  </dialog>
+
+  <!-- Add / edit one grade -->
+  <dialog id="gradeSheet" class="sheet">
+    <form id="gradeForm" method="dialog">
+      <div class="grabber" aria-hidden="true"></div>
+      <h3 id="gradeTitle">New grade</h3>
+      <div class="field-row">
+        <label class="field">
+          <span>Grade</span>
+          <input id="gValue" type="text" inputmode="decimal" maxlength="8" placeholder="e.g. 9.50" required autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Date</span>
+          <input id="gDate" type="date" required>
+        </label>
+      </div>
+      <label class="field">
+        <span>Class</span>
+        <select id="gClass"></select>
+      </label>
+      <fieldset class="field">
+        <legend>Kind</legend>
+        <div class="segmented kind-seg">
+          <label><input type="radio" name="gkind" value="test"><span>Test</span></label>
+          <label><input type="radio" name="gkind" value="oral" checked><span>Oral</span></label>
+          <label><input type="radio" name="gkind" value="homework"><span>Homework</span></label>
+          <label><input type="radio" name="gkind" value="other"><span>Other</span></label>
+        </div>
+      </fieldset>
+      <label class="field">
+        <span>Note <em>(optional)</em></span>
+        <input id="gNote" type="text" maxlength="200" autocomplete="off" placeholder="e.g. Presentation about volcanoes">
+      </label>
+      <div class="sheet-actions">
+        <button id="gradeDeleteBtn" class="btn danger" type="button" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button id="gradeCancelBtn" class="btn ghost" type="button">Cancel</button>
+        <button class="btn primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Restore: merge or replace -->
   <dialog id="restoreSheet" class="sheet">
     <div class="grabber" aria-hidden="true"></div>

@@ -27,13 +27,17 @@ The app has four tabs:
 
 **Tests** lists your upcoming tests: the next 7 days first, then later ones, with a countdown ("Tomorrow", "In 3 days"). For each test you add the class, date, optional time, topic and what to study. You get a reminder the day before (or 2 days or a week before, or that morning). Tick a test when you've studied and it shows **Ready ✓**. After the test it moves to **Past tests**, where you can write down your grade. Tests also show on their day in the Planner, and the tab shows a badge when a test is today or tomorrow. You can also tap a class on the Planner and choose **Add a test**.
 
+**Grades** (in the Tests tab): add grades per class (test, oral, homework or other). A grade you write on a past test counts automatically. Each class shows its average, and the **overall average** is the average of the class averages. Tap a class to see, edit or delete its grades. Grades can be written as `9`, `9.5` or `9,50`.
+
 Also:
 - Tasks with an optional time, a priority (low, medium or high) and notes
 - **Reminders** at the task's time, or 10 minutes, 30 minutes, 1 hour or 1 day before. Tap a reminder to open that day.
 - Tick tasks off, with a progress bar for each day
 - "Move to today" for unfinished tasks from earlier days
 - Undo after deleting a task
-- Backups (in the ••• menu): save a file to **Documents › Planner**, or send one to Drive or email. Restore from a backup file.
+- **Automatic daily backup** (Android and Windows apps, on by default): once a day a copy is saved to **Documents › Planner › Auto backups**, keeping the last 7. Files there survive uninstalling the app. You can switch it off in the ••• menu.
+- Backups by hand (in the ••• menu): save a file to **Documents › Planner**, or send one to Drive or email.
+- **Restore** from any backup file and choose **Merge** (adds what's missing and keeps the newest version of everything; things you deleted stay deleted) or **Replace everything** (makes the device exactly like the backup). Both can be undone right after.
 
 ## Install on Android
 

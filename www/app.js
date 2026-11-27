@@ -228,6 +228,9 @@
     fGrade: $("fGrade"), gradeField: $("gradeField"), prioField: $("prioField"), fNotesLabel: $("fNotesLabel"),
     testSections: $("testSections"), testBadge: $("testBadge"),
     restoreSheet: $("restoreSheet"), restoreInfo: $("restoreInfo"),
+    gradesSheet: $("gradesSheet"), gsTitle: $("gsTitle"), gsSub: $("gsSub"), gsAvg: $("gsAvg"), gsList: $("gsList"),
+    gradeSheet: $("gradeSheet"), gradeForm: $("gradeForm"), gradeTitle: $("gradeTitle"), gValue: $("gValue"), gDate: $("gDate"),
+    gClass: $("gClass"), gNote: $("gNote"), gradeDeleteBtn: $("gradeDeleteBtn"),
     autoRow: $("autoRow"), autoToggle: $("autoToggle"), autoStatus: $("autoStatus"),
     holidayBox: $("holidayBox"), holidaySheet: $("holidaySheet"), holidayForm: $("holidayForm"), holidayTitle: $("holidayTitle"),
     hName: $("hName"), hFrom: $("hFrom"), hTo: $("hTo"), holidayDeleteBtn: $("holidayDeleteBtn"),
@@ -239,7 +242,8 @@
     hwSheet: $("hwSheet"), hwForm: $("hwForm"), hwRows: $("hwRows"),
     menu: $("menuSheet"), importFile: $("importFile"), toast: $("toast"),
   };
-  const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.classActions, el.holidaySheet, el.restoreSheet, el.menu];
+  const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.classActions, el.holidaySheet, el.restoreSheet,
+    el.gradeSheet, el.gradesSheet, el.menu];
   const anyDialogOpen = () => dialogs().some((d) => d.open);
 
   // ---------- Classes helpers ----------
@@ -693,6 +697,7 @@
       card.className = "hint-card";
       card.innerHTML = "<strong>No tests yet</strong><p>Tap <strong>+</strong> to add a test. Pick the class and date, write what to study, and get a reminder before it. Tick it when you're ready.</p>";
       el.testSections.appendChild(card);
+      renderGradesSection();
       return;
     }
     const section = (title, items, emptyText, cls) => {
@@ -717,7 +722,156 @@
     };
     section("Next 7 days", thisWeek, "No tests this week. 🎉", "tests-soon");
     if (later.length) section("Later", later, "");
+    renderGradesSection();
     if (past.length) section("Past tests", past, "", "tests-past");
+  }
+
+  // ---------- Grades & averages ----------
+  const fmtGrade = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0$/, ""));
+  const fmtAvg = (v) => v.toFixed(2);
+  const average = (vals) => (vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null);
+
+  /** All grades of a class: the ones added here plus grades written on its tests. */
+  function gradesFor(name) {
+    const own = state.grades.filter((g) => g.className === name)
+      .map((g) => ({ id: g.id, value: g.value, kind: g.kind, date: g.date, note: g.note }));
+    const fromTests = state.tasks
+      .filter((t) => t.type === "test" && t.className === name && parseGrade(t.grade) !== null)
+      .map((t) => ({ testId: t.id, value: parseGrade(t.grade), kind: "test", date: t.date, note: t.title }));
+    return [...own, ...fromTests].sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  function gradeSummary() {
+    const names = new Set([...state.grades.map((g) => g.className),
+      ...state.tasks.filter((t) => t.type === "test" && parseGrade(t.grade) !== null).map((t) => t.className)]);
+    const rows = [...names].map((name) => {
+      const list = gradesFor(name);
+      return { name, count: list.length, avg: average(list.map((g) => g.value)) };
+    }).filter((r) => r.count).sort((a, b) => (a.name || "~").localeCompare(b.name || "~"));
+    // Overall average = average of the class averages
+    return { rows, overall: average(rows.map((r) => r.avg)) };
+  }
+
+  function renderGradesSection() {
+    const { rows, overall } = gradeSummary();
+    const sec = document.createElement("section");
+    sec.className = "hw-section grades-section";
+    const head = document.createElement("div");
+    head.className = "holiday-head";
+    head.innerHTML = `<h3 class="section-title">Grades</h3><button type="button" class="mini-btn">+ Add grade</button>`;
+    head.querySelector(".mini-btn").addEventListener("click", () => { gradesSheetClass = null; openGradeSheet(); });
+    sec.appendChild(head);
+    if (!rows.length) {
+      const p = document.createElement("p");
+      p.className = "muted small";
+      p.textContent = "Add your grades to see the average for each class. A grade you write on a past test counts automatically.";
+      sec.appendChild(p);
+      el.testSections.appendChild(sec);
+      return;
+    }
+    const card = document.createElement("div");
+    card.className = "overall-card";
+    card.innerHTML = `<span><strong>Overall average</strong><span class="muted small"></span></span><span class="avg-big"></span>`;
+    card.querySelector(".muted").textContent = `${rows.length} class${rows.length === 1 ? "" : "es"} · average of the class averages`;
+    card.querySelector(".avg-big").textContent = fmtAvg(overall);
+    sec.appendChild(card);
+    for (const r of rows) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "avg-row";
+      b.style.setProperty("--c", classColor(r.name));
+      b.innerHTML = `<span class="avg-name"><strong></strong><span class="muted small"></span></span><span class="avg-val"></span>`;
+      b.querySelector("strong").textContent = r.name || "No class";
+      b.querySelector(".muted").textContent = `${r.count} grade${r.count === 1 ? "" : "s"}`;
+      b.querySelector(".avg-val").textContent = fmtAvg(r.avg);
+      b.addEventListener("click", () => openGradesSheet(r.name));
+      sec.appendChild(b);
+    }
+    el.testSections.appendChild(sec);
+  }
+
+  let gradesSheetClass = null; // the class whose grade list is open (to return to it after editing)
+  function openGradesSheet(name) {
+    gradesSheetClass = name;
+    const list = gradesFor(name);
+    if (!list.length) { el.gradesSheet.open && el.gradesSheet.close(); render(); return; }
+    el.gsTitle.textContent = name || "No class";
+    el.gsSub.textContent = `${list.length} grade${list.length === 1 ? "" : "s"} · average`;
+    el.gsAvg.textContent = fmtAvg(average(list.map((g) => g.value)));
+    el.gsList.replaceChildren(...list.map((g) => {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "grade-item";
+      b.innerHTML = `<span class="gi-value"></span><span class="gi-body"><span class="gi-kind"></span><span class="gi-note muted small"></span></span><span class="gi-date muted small"></span>`;
+      b.querySelector(".gi-value").textContent = fmtGrade(g.value);
+      b.querySelector(".gi-kind").textContent = (g.testId ? "🧪 " : "") + GRADE_KINDS[g.kind];
+      b.querySelector(".gi-note").textContent = g.note;
+      b.querySelector(".gi-date").textContent = fmtShort.format(fromISO(g.date));
+      b.addEventListener("click", () => {
+        el.gradesSheet.close();
+        if (g.testId) openTaskSheet(g.testId); else openGradeSheet(g.id, {}, true);
+      });
+      li.appendChild(b);
+      return li;
+    }));
+    if (!el.gradesSheet.open) el.gradesSheet.showModal();
+  }
+
+  let editingGradeId = null;
+  let gradeReturnToList = false; // opened from a class's grade list: go back to it afterwards
+  function openGradeSheet(id = null, preset = {}, fromList = false) {
+    editingGradeId = id;
+    gradeReturnToList = fromList;
+    const g = id ? state.grades.find((x) => x.id === id) : null;
+    el.gradeTitle.textContent = g ? "Edit grade" : "New grade";
+    const names = [...new Set([...classNamesList(), ...state.grades.map((x) => x.className).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+    const current = g ? g.className : (preset.className !== undefined ? preset.className : (gradesSheetClass || names[0] || ""));
+    if (current && !names.includes(current)) names.unshift(current);
+    el.gClass.replaceChildren(...names.map((n) => new Option(n, n)), new Option("Other / no class", ""));
+    el.gClass.value = current;
+    el.gValue.value = g ? fmtGrade(g.value) : "";
+    el.gDate.value = g ? g.date : todayISO();
+    el.gNote.value = g ? g.note : "";
+    el.gradeForm.elements.gkind.value = g ? g.kind : "oral";
+    el.gradeDeleteBtn.hidden = !g;
+    el.gradeSheet.showModal();
+    if (!g) setTimeout(() => el.gValue.focus(), 50);
+  }
+
+  function closeGradeSheet(backToList) {
+    el.gradeSheet.close();
+    editingGradeId = null;
+    render();
+    if (backToList && gradeReturnToList && gradesSheetClass !== null && gradesFor(gradesSheetClass).length) openGradesSheet(gradesSheetClass);
+  }
+
+  function saveGradeFromForm() {
+    const value = parseGrade(el.gValue.value);
+    if (value === null) { toast("Write the grade as a number, e.g. 9 or 9.50"); el.gValue.focus(); return; }
+    if (!el.gDate.value) { el.gDate.focus(); return; }
+    const data = { className: el.gClass.value, value, kind: el.gradeForm.elements.gkind.value || "other", date: el.gDate.value, note: el.gNote.value.trim().slice(0, 200) };
+    if (editingGradeId) {
+      const g = state.grades.find((x) => x.id === editingGradeId);
+      if (g) touch(Object.assign(g, data));
+    } else {
+      state.grades.push(normalizeGrade({ ...data, id: newId(), createdAt: Date.now() }));
+    }
+    save();
+    if (gradeReturnToList) gradesSheetClass = data.className;
+    closeGradeSheet(true);
+    const avg = average(gradesFor(data.className).map((g) => g.value));
+    toast(`${data.className || "Grade"} average: ${fmtAvg(avg)}`);
+  }
+
+  function deleteGrade(id) {
+    const idx = state.grades.findIndex((x) => x.id === id);
+    if (idx < 0) return;
+    const [removed] = state.grades.splice(idx, 1);
+    forget(removed.id);
+    save();
+    closeGradeSheet(true);
+    toast("Grade deleted", "Undo", () => { unforget(removed); state.grades.push(removed); save(); render(); });
   }
 
   // ---------- Navigation ----------
@@ -1656,6 +1810,11 @@
     if (settings.autoBackup) autoBackup(true).then((ok) => ok && toast("Backup saved"));
   });
   $("restoreMerge").addEventListener("click", () => applyRestore("merge"));
+  $("gsClose").addEventListener("click", () => { el.gradesSheet.close(); gradesSheetClass = null; });
+  $("gsAdd").addEventListener("click", () => { el.gradesSheet.close(); openGradeSheet(null, { className: gradesSheetClass }, true); });
+  el.gradeForm.addEventListener("submit", (e) => { e.preventDefault(); saveGradeFromForm(); });
+  $("gradeCancelBtn").addEventListener("click", () => closeGradeSheet(true));
+  el.gradeDeleteBtn.addEventListener("click", () => editingGradeId && deleteGrade(editingGradeId));
   $("restoreReplace").addEventListener("click", () => {
     if (confirm("Replace everything on this device with the backup? (You can undo right after.)")) applyRestore("replace");
   });
