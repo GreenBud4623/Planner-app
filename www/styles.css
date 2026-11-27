@@ -706,3 +706,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .steps-bar { height: 4px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 6px; }
 .steps-bar > div { height: 100%; background: var(--accent); border-radius: inherit; }
 .task-meta .steps-count { font-weight: 650; }
+
+/* Sync */
+.code-input { text-transform: uppercase; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
+.sync-status { min-height: 1.4em; margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--accent); }
+.sync-box {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--accent-soft); border-radius: 14px; padding: 14px; margin: 10px 0;
+}
+.sync-big { font-size: 22px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; margin-bottom: 6px; }
+.sync-big.code { font-size: 30px; letter-spacing: 0.12em; color: var(--accent); }

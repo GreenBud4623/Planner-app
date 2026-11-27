@@ -63,7 +63,8 @@ const FAKE_ANDROID = `
 
 /**
  * Opens the app on a phone. `data` (optional) is put in storage first, like an existing install.
- * `native: false` runs it as the plain web version instead of the Android app.
+ * `native: false` runs it as the plain web version instead of the Android app
+ * (`extraScript` can then turn it into the Windows app by defining window.plannerDesktop).
  */
 async function openApp(browser, { data, native = true, settings, extraScript } = {}) {
   const context = await browser.newContext({ ...devices["Pixel 7"], timezoneId: TIMEZONE });
@@ -74,7 +75,7 @@ async function openApp(browser, { data, native = true, settings, extraScript } =
   page.on("dialog", (d) => d.accept());
   await page.clock.install({ time: NOW });
   await page.route("**/vendor/capacitor.js", (route) =>
-    route.fulfill({ contentType: "text/javascript", body: native ? FAKE_ANDROID + (extraScript || "") : "" }));
+    route.fulfill({ contentType: "text/javascript", body: native ? FAKE_ANDROID + (extraScript || "") : (extraScript || "") }));
   await page.goto(globalThis.__plannerBase);
   if (data || settings) {
     await page.evaluate(({ data, settings }) => {

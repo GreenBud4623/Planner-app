@@ -35,6 +35,11 @@ Also:
 - Tick tasks off, with a progress bar for each day
 - "Move to today" for unfinished tasks from earlier days
 - Undo after deleting a task
+- **Week A / Week B:** a class can happen every week or only every other week. The Timetable shows which week it is, with a **Swap A/B** button.
+- **Repeating tasks:** every day, every weekday, every week or every month. Ticking one off creates the next one.
+- **Checklists:** add steps to any task, homework or project and see the progress (e.g. ☑ 2/5).
+- **Home-screen widget (Android):** long-press the home screen → Widgets → Planner. Shows today's classes, what's due and tomorrow's tests and homework.
+- **Sync phone ↔ PC over Wi-Fi:** on the PC, ••• → *Sync with phone* shows an address and a code; on the phone, ••• → *Sync with PC* and type them in. Both get everything, and the newest change of each item wins. Nothing goes through the internet; the data is encrypted with the one-time code. Both must be on the same Wi-Fi (allow Planner through the Windows firewall on private networks).
 - **Evening heads-up** (Android and Windows apps): at 7 PM a notification lists what's due tomorrow: homework, tests and classes to recover. Change the time or switch it off in the ••• menu.
 - **Automatic daily backup** (Android and Windows apps, on by default): once a day a copy is saved to **Documents › Planner › Auto backups**, keeping the last 7. Files there survive uninstalling the app. You can switch it off in the ••• menu.
 - Backups by hand (in the ••• menu): save a file to **Documents › Planner**, or send one to Drive or email.

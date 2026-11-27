@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld("plannerDesktop", {
   backup: {
     writeAuto: (name, json, keep) => ipcRenderer.invoke("backup:auto", { name, json, keep }),
   },
+  // Wi-Fi sync with the phone: the main process only passes encrypted messages; the page checks the code
+  sync: {
+    start: () => ipcRenderer.invoke("sync:start"),
+    stop: () => ipcRenderer.invoke("sync:stop"),
+    reply: (id, status, body) => ipcRenderer.invoke("sync:reply", { id, status, body }),
+    onRequest: (cb) => { ipcRenderer.on("sync:request", (_e, req) => cb(req)); },
+  },
   notifications: {
     checkPermissions: granted,
     requestPermissions: granted,

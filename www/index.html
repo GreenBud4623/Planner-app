@@ -370,6 +370,7 @@
       <button id="exportBtn" class="menu-item" type="button">Save a backup file</button>
       <button id="shareBtn" class="menu-item" type="button" hidden>Send a backup (Drive, email…)</button>
       <button id="importBtn" class="menu-item" type="button">Restore from a backup file</button>
+      <button id="syncBtn" class="menu-item" type="button" hidden>Sync</button>
       <button id="clearDoneBtn" class="menu-item" type="button">Delete completed tasks</button>
       <button id="closeMenu" class="menu-item muted-item" type="button">Close</button>
     </div>
@@ -433,6 +434,48 @@
         <button class="btn primary" type="submit">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Sync (phone side) -->
+  <dialog id="syncPhoneSheet" class="sheet">
+    <form method="dialog">
+      <div class="grabber" aria-hidden="true"></div>
+      <h3>Sync with your PC</h3>
+      <p class="muted small">On your PC open Planner → ••• → <strong>Sync with phone</strong>, then type what it shows. Both need to be on the same Wi-Fi.</p>
+      <label class="field">
+        <span>PC address</span>
+        <input id="spAddress" type="text" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="e.g. 192.168.1.20:47832">
+      </label>
+      <label class="field">
+        <span>Code</span>
+        <input id="spCode" type="text" autocomplete="off" autocapitalize="characters" maxlength="9" placeholder="e.g. K7PX-3M9Q" class="code-input">
+      </label>
+      <p id="spStatus" class="sync-status" role="status"></p>
+      <div class="sheet-actions">
+        <span class="spacer"></span>
+        <button id="spCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="spGo" class="btn primary" type="submit">Sync</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Sync (PC side) -->
+  <dialog id="syncPcSheet" class="sheet">
+    <div class="grabber" aria-hidden="true"></div>
+    <h3>Sync with your phone</h3>
+    <p class="muted small">On your phone open Planner → ••• → <strong>Sync with PC</strong> and type:</p>
+    <div class="sync-box">
+      <span class="muted small">Address</span>
+      <strong id="scAddress" class="sync-big"></strong>
+      <span class="muted small">Code</span>
+      <strong id="scCode" class="sync-big code"></strong>
+    </div>
+    <p id="scStatus" class="sync-status" role="status"></p>
+    <p class="muted small">Both need to be on the same Wi-Fi. If Windows asks about the firewall, allow Planner on <em>private networks</em>. This closes when you close this window.</p>
+    <div class="sheet-actions">
+      <span class="spacer"></span>
+      <button id="scClose" class="btn primary" type="button">Done</button>
+    </div>
   </dialog>
 
   <!-- Restore: merge or replace -->

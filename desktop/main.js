@@ -3,6 +3,8 @@
 // Closing the window keeps Planner in the system tray so reminders still arrive.
 const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, nativeTheme, shell } = require("electron");
 const fs = require("fs");
+const http = require("http");
+const os = require("os");
 const path = require("path");
 const { dueBetween, stillPending } = require("./scheduler");
 
@@ -188,6 +190,84 @@ ipcMain.handle("backup:auto", (_e, opts) => {
   old.forEach((f) => { try { fs.unlinkSync(path.join(dir, f)); } catch { /* keep going */ } });
   return { path: path.join(dir, name) };
 });
+
+// ---------- Wi-Fi sync with the phone ----------
+// While the "Sync with phone" window is open, a small server on the home network accepts one kind of
+// request: POST /planner-sync with an encrypted message. It is handed to the page, which checks the
+// one-time code, merges and answers. The server stops after 10 minutes, on close, or on quit.
+const SYNC_PORT = 47832;
+const SYNC_MAX_BODY = 25 * 1024 * 1024;
+let syncServer = null;
+let syncOwner = null; // the page that started the sync
+let syncStopTimer = null;
+let syncSeq = 0;
+const syncWaiting = new Map();
+
+/** This PC's addresses on the local network (Wi-Fi / Ethernet), private ranges first. */
+function lanAddresses() {
+  const out = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const a of list || []) if (a.family === "IPv4" && !a.internal) out.push(a.address);
+  }
+  const isPrivate = (ip) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+  return out.sort((a, b) => isPrivate(b) - isPrivate(a));
+}
+
+function stopSync() {
+  clearTimeout(syncStopTimer);
+  for (const done of syncWaiting.values()) done({ status: 410, body: "{}" });
+  syncWaiting.clear();
+  if (syncServer) { syncServer.close(); syncServer = null; }
+  syncOwner = null;
+}
+
+function handleSyncRequest(req, res) {
+  const send = (status, body) => {
+    res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(body);
+  };
+  if (req.method !== "POST" || req.url !== "/planner-sync") return send(404, "{}");
+  const chunks = [];
+  let size = 0;
+  req.on("data", (c) => {
+    size += c.length;
+    if (size > SYNC_MAX_BODY) { send(413, "{}"); req.destroy(); return; }
+    chunks.push(c);
+  });
+  req.on("end", () => {
+    if (res.writableEnded || !syncOwner || syncOwner.isDestroyed()) return res.writableEnded || send(410, "{}");
+    const id = ++syncSeq;
+    const timer = setTimeout(() => { syncWaiting.delete(id); send(504, "{}"); }, 60 * 1000);
+    syncWaiting.set(id, ({ status, body }) => { clearTimeout(timer); send(status, body); });
+    syncOwner.send("sync:request", { id, body: Buffer.concat(chunks).toString("utf8") });
+  });
+}
+
+ipcMain.handle("sync:start", async (e) => {
+  stopSync();
+  syncOwner = e.sender;
+  syncServer = http.createServer(handleSyncRequest);
+  const listen = (port) => new Promise((resolve, reject) => {
+    syncServer.once("error", reject);
+    syncServer.listen(port, "0.0.0.0", () => resolve(syncServer.address().port));
+  });
+  let port;
+  try { port = await listen(SYNC_PORT); } catch { port = await listen(0); } // port taken: use any free one
+  syncStopTimer = setTimeout(stopSync, 10 * 60 * 1000);
+  return { addresses: lanAddresses(), port };
+});
+
+ipcMain.handle("sync:stop", () => { stopSync(); });
+
+ipcMain.handle("sync:reply", (_e, msg) => {
+  const done = msg && syncWaiting.get(msg.id);
+  if (!done) return;
+  syncWaiting.delete(msg.id);
+  const status = [200, 403, 410, 500].includes(msg.status) ? msg.status : 500;
+  done({ status, body: typeof msg.body === "string" ? msg.body : "{}" });
+});
+
+app.on("will-quit", stopSync);
 
 // ---------- Start ----------
 function start() {

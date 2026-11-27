@@ -68,6 +68,8 @@
   const Files = plugin("Filesystem");
   const Share = plugin("Share");
   const Widget = plugin("WidgetBridge"); // home-screen widget (android/app/.../PlannerWidget.java)
+  // Native HTTP (not the WebView), so the phone can reach the PC on the home network
+  const Http = isNative ? ((window.capacitorExports && window.capacitorExports.CapacitorHttp) || plugin("CapacitorHttp")) : null;
 
   // ---------- Storage ----------
   let memoryFallback = null; // used if localStorage is blocked (e.g. private mode)
@@ -243,6 +245,8 @@
     fRepeat: $("fRepeat"), repeatField: $("repeatField"), stepsField: $("stepsField"), stepsList: $("stepsList"), prioField: $("prioField"), fNotesLabel: $("fNotesLabel"),
     testSections: $("testSections"), testBadge: $("testBadge"),
     restoreSheet: $("restoreSheet"), restoreInfo: $("restoreInfo"),
+    syncBtn: $("syncBtn"), syncPhoneSheet: $("syncPhoneSheet"), spAddress: $("spAddress"), spCode: $("spCode"),
+    spStatus: $("spStatus"), spGo: $("spGo"), syncPcSheet: $("syncPcSheet"), scAddress: $("scAddress"), scCode: $("scCode"), scStatus: $("scStatus"),
     gradesSheet: $("gradesSheet"), gsTitle: $("gsTitle"), gsSub: $("gsSub"), gsAvg: $("gsAvg"), gsList: $("gsList"),
     gradeSheet: $("gradeSheet"), gradeForm: $("gradeForm"), gradeTitle: $("gradeTitle"), gValue: $("gValue"), gDate: $("gDate"),
     gClass: $("gClass"), gNote: $("gNote"), gradeDeleteBtn: $("gradeDeleteBtn"),
@@ -259,7 +263,7 @@
     menu: $("menuSheet"), importFile: $("importFile"), toast: $("toast"),
   };
   const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.classActions, el.holidaySheet, el.restoreSheet,
-    el.gradeSheet, el.gradesSheet, el.menu];
+    el.gradeSheet, el.gradesSheet, el.syncPhoneSheet, el.syncPcSheet, el.menu];
   const anyDialogOpen = () => dialogs().some((d) => d.open);
 
   // ---------- Classes helpers ----------
@@ -1874,6 +1878,161 @@
     if (handled) e.preventDefault();
   });
 
+  // ---------- Phone ↔ PC sync over Wi-Fi ----------
+  // The PC (Windows app) opens a short-lived local server and shows its address and a one-time code.
+  // The phone sends its data encrypted with that code (AES-GCM, key from PBKDF2), the PC merges and sends
+  // the merged data back, and the phone merges it too. Without the code the data can't be read or faked.
+  const SYNC_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I/L
+  const SYNC_PORT = 47832;
+  const te = new TextEncoder(), td = new TextDecoder();
+  const cleanCode = (c) => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  function newSyncCode() {
+    const r = crypto.getRandomValues(new Uint8Array(8));
+    const c = [...r].map((x) => SYNC_ALPHABET[x % SYNC_ALPHABET.length]).join("");
+    return c.slice(0, 4) + "-" + c.slice(4);
+  }
+  function toB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  const fromB64 = (s) => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
+  async function syncKey(code, salt) {
+    const base = await crypto.subtle.importKey("raw", te.encode(cleanCode(code)), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+      base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  }
+  async function sealSync(key, salt, obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, te.encode(JSON.stringify(obj)));
+    return { app: "planner-sync", v: 1, salt: toB64(salt), iv: toB64(iv), data: toB64(data) };
+  }
+  /** Throws if the code is wrong or the data was changed on the way. */
+  async function openSync(key, payload) {
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(payload.iv) }, key, fromB64(payload.data));
+    return JSON.parse(td.decode(plain));
+  }
+  const syncSnapshot = () => ({ ...state, sentAt: Date.now() });
+  function syncCounts(c) {
+    const bits = [];
+    if (c.added) bits.push(`${c.added} new`);
+    if (c.updated) bits.push(`${c.updated} updated`);
+    if (c.removed) bits.push(`${c.removed} removed`);
+    return bits.length ? bits.join(", ") : "already up to date";
+  }
+
+  // --- Phone side (Android app) ---
+  function openSyncPhone() {
+    el.menu.close();
+    el.spAddress.value = settings.syncAddress || "";
+    el.spCode.value = "";
+    el.spStatus.textContent = "";
+    el.syncPhoneSheet.showModal();
+  }
+
+  async function syncWithPc() {
+    let addr = el.spAddress.value.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+    if (!/^[\w.-]+(:\d{1,5})?$/.test(addr)) { el.spStatus.textContent = "Type the address your PC shows, e.g. 192.168.1.20:47832"; return; }
+    if (!/:\d+$/.test(addr)) addr += ":" + SYNC_PORT;
+    const code = cleanCode(el.spCode.value);
+    if (code.length !== 8) { el.spStatus.textContent = "The code has 8 letters and numbers, e.g. K7PX-3M9Q"; return; }
+    settings.syncAddress = addr;
+    saveSettings();
+    el.spGo.disabled = true;
+    el.spStatus.textContent = "Syncing…";
+    try {
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const key = await syncKey(code, salt);
+      const res = await Http.request({
+        url: `http://${addr}/planner-sync`, method: "POST",
+        headers: { "Content-Type": "application/json" },
+        data: await sealSync(key, salt, syncSnapshot()),
+        connectTimeout: 8000, readTimeout: 30000,
+      });
+      if (res.status === 403) throw new Error("wrong-code");
+      if (res.status !== 200) throw new Error("http-" + res.status);
+      const body = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
+      const theirs = normalizeState(await openSync(key, body));
+      const { state: merged, counts } = mergeStates(state, theirs);
+      state = merged;
+      save();
+      render();
+      el.syncPhoneSheet.close();
+      toast(`Synced with your PC: ${syncCounts(counts)}`);
+    } catch (e) {
+      const m = String((e && e.message) || e);
+      el.spStatus.textContent = m === "wrong-code" ? "Wrong code — check the code on your PC."
+        : /OperationError|decrypt/i.test(m) ? "Something went wrong reading the PC's answer. Try again."
+        : "Couldn't reach your PC. Are both on the same Wi-Fi and is the Sync window open on the PC?";
+    } finally {
+      el.spGo.disabled = false;
+    }
+  }
+
+  // --- PC side (Windows app) ---
+  let pcSyncCode = null, pcSyncFails = 0;
+  async function openSyncPc() {
+    el.menu.close();
+    pcSyncCode = newSyncCode();
+    pcSyncFails = 0;
+    el.scCode.textContent = pcSyncCode;
+    el.scAddress.textContent = "Starting…";
+    el.scStatus.textContent = "Waiting for your phone…";
+    el.syncPcSheet.showModal();
+    try {
+      const info = await Desktop.sync.start();
+      el.scAddress.textContent = info.addresses.length
+        ? info.addresses.map((a) => `${a}:${info.port}`).join("  or  ")
+        : "No Wi-Fi network found on this PC";
+    } catch {
+      el.scAddress.textContent = "Couldn't start — is another Planner window syncing?";
+    }
+  }
+
+  function closeSyncPc() {
+    pcSyncCode = null;
+    if (Desktop && Desktop.sync) Desktop.sync.stop().catch(() => {});
+    el.syncPcSheet.close();
+  }
+
+  /** A phone sent its data: check the code, merge, and answer with the merged data. */
+  async function answerPhone(req) {
+    if (!pcSyncCode) return Desktop.sync.reply(req.id, 410, "{}");
+    let payload, theirs, key, salt;
+    try {
+      payload = JSON.parse(req.body);
+      salt = fromB64(payload.salt);
+      key = await syncKey(pcSyncCode, salt);
+      theirs = normalizeState(await openSync(key, payload));
+    } catch {
+      pcSyncFails++;
+      el.scStatus.textContent = "A phone tried a wrong code.";
+      if (pcSyncFails >= 5) { closeSyncPc(); toast("Sync stopped after 5 wrong codes"); }
+      return Desktop.sync.reply(req.id, 403, JSON.stringify({ error: "wrong-code" }));
+    }
+    const { state: merged, counts } = mergeStates(state, theirs);
+    state = merged;
+    save();
+    render();
+    el.scStatus.textContent = `✓ Synced: ${syncCounts(counts)}`;
+    toast("Synced with your phone");
+    return Desktop.sync.reply(req.id, 200, JSON.stringify(await sealSync(key, salt, syncSnapshot())));
+  }
+
+  function setupSync() {
+    if (Http) {
+      el.syncBtn.hidden = false;
+      el.syncBtn.textContent = "Sync with PC (Wi-Fi)";
+      el.syncBtn.addEventListener("click", openSyncPhone);
+    } else if (Desktop && Desktop.sync) {
+      el.syncBtn.hidden = false;
+      el.syncBtn.textContent = "Sync with phone (Wi-Fi)";
+      el.syncBtn.addEventListener("click", openSyncPc);
+      Desktop.sync.onRequest((req) => { answerPhone(req).catch(() => Desktop.sync.reply(req.id, 500, "{}")); });
+    }
+  }
+
   // ---------- Home-screen widget (Android) ----------
   // Sends a short summary for today and the next days; the widget shows the entry for the current date.
   let widgetTimer;
@@ -2023,6 +2182,10 @@
     saveSettings(); scheduleNotificationSync();
     toast(`Evening heads-up at ${formatTime(settings.eveningTime)}`);
   });
+  el.syncPhoneSheet.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); syncWithPc(); });
+  $("spCancel").addEventListener("click", () => el.syncPhoneSheet.close());
+  $("scClose").addEventListener("click", closeSyncPc);
+  el.syncPcSheet.addEventListener("close", () => { if (pcSyncCode) closeSyncPc(); });
   $("restoreMerge").addEventListener("click", () => applyRestore("merge"));
   $("gsClose").addEventListener("click", () => { el.gradesSheet.close(); gradesSheetClass = null; });
   $("gsAdd").addEventListener("click", () => { el.gradesSheet.close(); openGradeSheet(null, { className: gradesSheetClass }, true); });
@@ -2107,6 +2270,7 @@
 
   setupNative();
   setupDesktop();
+  setupSync();
   render();
   setTimeout(maybeAskHomework, 400);
   setTimeout(() => autoBackup(), 3000);
