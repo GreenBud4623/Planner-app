@@ -102,6 +102,7 @@
       const old = toISO(addDays(new Date(), -90)); // forget holidays that ended long ago
       s.holidays = data.holidays.filter(isValidHoliday).map(normalizeHoliday).filter((h) => h.to >= old);
     }
+    if (data && isISO(data.weekA)) s.weekA = data.weekA; // a Monday that starts a "Week A"
     if (data && Array.isArray(data.grades)) s.grades = data.grades.filter(isValidGrade).map(normalizeGrade);
     if (data && data.deleted && typeof data.deleted === "object") {
       const cutoff = Date.now() - 180 * 864e5;
@@ -192,6 +193,7 @@
       room: typeof c.room === "string" ? c.room.slice(0, 80) : "",
       color: CLASS_COLORS.includes(c.color) ? c.color : CLASS_COLORS[0],
       homeworkCheck: !!c.homeworkCheck,
+      weeks: c.weeks === "A" || c.weeks === "B" ? c.weeks : "all", // every week, or only in week A / week B
       checkSince: typeof c.checkSince === "number" ? c.checkSince : Date.now(),
       createdAt: typeof c.createdAt === "number" ? c.createdAt : Date.now(),
       updatedAt: typeof c.updatedAt === "number" ? c.updatedAt : (typeof c.createdAt === "number" ? c.createdAt : 0),
@@ -233,7 +235,7 @@
     gClass: $("gClass"), gNote: $("gNote"), gradeDeleteBtn: $("gradeDeleteBtn"),
     autoRow: $("autoRow"), autoToggle: $("autoToggle"), autoStatus: $("autoStatus"),
     eveningRow: $("eveningRow"), eveningToggle: $("eveningToggle"), eveningTime: $("eveningTime"),
-    holidayBox: $("holidayBox"), holidaySheet: $("holidaySheet"), holidayForm: $("holidayForm"), holidayTitle: $("holidayTitle"),
+    holidayBox: $("holidayBox"), weekABar: $("weekABar"), holidaySheet: $("holidaySheet"), holidayForm: $("holidayForm"), holidayTitle: $("holidayTitle"),
     hName: $("hName"), hFrom: $("hFrom"), hTo: $("hTo"), holidayDeleteBtn: $("holidayDeleteBtn"),
     classActions: $("classActions"), caTitle: $("caTitle"), caWhen: $("caWhen"),
     classSheet: $("classSheet"), classForm: $("classForm"), classSheetTitle: $("classSheetTitle"),
@@ -248,7 +250,24 @@
   const anyDialogOpen = () => dialogs().some((d) => d.open);
 
   // ---------- Classes helpers ----------
-  const classesOn = (dayIdx) => state.classes.filter((c) => c.day === dayIdx).sort((a, b) => a.start.localeCompare(b.start));
+  const byStart = (a, b) => a.start.localeCompare(b.start);
+  /** Every class in the timetable for a weekday (Monday = 0), whatever the week. */
+  const classesOn = (dayIdx) => state.classes.filter((c) => c.day === dayIdx).sort(byStart);
+
+  // Week A / Week B: classes can happen every week or only every other week.
+  const usesWeeks = () => state.classes.some((c) => c.weeks !== "all");
+  /** "A" or "B" for the week that contains this date. */
+  function weekLetter(iso) {
+    const anchor = state.weekA || toISO(startOfWeek(new Date()));
+    const diff = Math.round((startOfWeek(fromISO(iso)) - startOfWeek(fromISO(anchor))) / (7 * 864e5));
+    return ((diff % 2) + 2) % 2 === 0 ? "A" : "B";
+  }
+  /** Does this class happen on this date? */
+  const classOn = (c, iso) => c.day === weekdayIdx(fromISO(iso)) && (c.weeks === "all" || c.weeks === weekLetter(iso));
+  /** The classes that actually happen on a date. */
+  const lessonsOn = (iso) => state.classes.filter((c) => classOn(c, iso)).sort(byStart);
+  /** Two classes can both happen in the same week (so a time clash is real). */
+  const sameWeeks = (a, b) => a.weeks === "all" || b.weeks === "all" || a.weeks === b.weeks;
   const classNamesList = () => [...new Set(state.classes.map((c) => c.name))].sort((a, b) => a.localeCompare(b));
   const classColor = (name) => (state.classes.find((c) => c.name === name) || {}).color || "var(--muted)";
 
@@ -257,13 +276,14 @@
     const groups = [];
     let cur = null, curEnd = "";
     for (const c of classes) {
-      if (cur && c.start < curEnd) { cur.push(c); if (c.end > curEnd) curEnd = c.end; }
+      const clash = cur && c.start < curEnd && cur.some((o) => sameWeeks(o, c) && o.start < c.end && c.start < o.end);
+      if (clash) { cur.push(c); if (c.end > curEnd) curEnd = c.end; }
       else { cur = [c]; groups.push(cur); curEnd = c.end; }
     }
     return groups;
   }
 
-  const overlapsWith = (c) => state.classes.filter((o) => o.id !== c.id && o.day === c.day && o.start < c.end && c.start < o.end);
+  const overlapsWith = (c) => state.classes.filter((o) => o.id !== c.id && o.day === c.day && sameWeeks(o, c) && o.start < c.end && c.start < o.end);
 
   // ---------- Holidays & days off ----------
   /** The holiday (or day off) that covers this date, if any. */
@@ -272,10 +292,10 @@
 
   /** Date (ISO) of the most recent lesson of a class with this name, on or before `onOrBeforeISO`. */
   function lastLessonDate(name, onOrBeforeISO = todayISO()) {
-    const days = new Set(state.classes.filter((c) => c.name === name).map((c) => c.day));
+    const named = state.classes.filter((c) => c.name === name);
     for (let i = 0; i < 60; i++) {
-      const d = addDays(fromISO(onOrBeforeISO), -i);
-      if (days.has(weekdayIdx(d)) && !holidayOn(toISO(d))) return toISO(d);
+      const iso = toISO(addDays(fromISO(onOrBeforeISO), -i));
+      if (named.some((c) => classOn(c, iso)) && !holidayOn(iso)) return iso;
     }
     return onOrBeforeISO;
   }
@@ -283,19 +303,18 @@
   /** Answering for a lesson (missed it, or added its homework) means we don't ask about it again. */
   function markLessonAnswered(name, iso) {
     if (!name || !isISO(iso)) return;
-    const day = weekdayIdx(fromISO(iso));
-    state.classes.forEach((c) => { if (c.name === name && c.day === day) state.hwAnswered[`${c.id}@${iso}`] = Date.now(); });
+    state.classes.forEach((c) => { if (c.name === name && classOn(c, iso)) state.hwAnswered[`${c.id}@${iso}`] = Date.now(); });
   }
 
   const toRecoverCount = (name) => state.tasks.filter((t) => t.type === "recover" && !t.done && t.className === name).length;
 
   /** Date (ISO) of the next lesson of a class with this name, strictly after `afterISO`. */
   function nextLessonDate(name, afterISO) {
-    const days = new Set(state.classes.filter((c) => c.name === name).map((c) => c.day));
-    if (!days.size) return toISO(addDays(fromISO(afterISO), 1));
+    const named = state.classes.filter((c) => c.name === name);
+    if (!named.length) return toISO(addDays(fromISO(afterISO), 1));
     for (let i = 1; i <= 120; i++) { // skips holidays, so may look past a long break
-      const d = addDays(fromISO(afterISO), i);
-      if (days.has(weekdayIdx(d)) && !holidayOn(toISO(d))) return toISO(d);
+      const iso = toISO(addDays(fromISO(afterISO), i));
+      if (named.some((c) => classOn(c, iso)) && !holidayOn(iso)) return iso;
     }
     return toISO(addDays(fromISO(afterISO), 7));
   }
@@ -307,9 +326,8 @@
     for (const c of state.classes) {
       if (!c.homeworkCheck) continue;
       for (let back = 0; back < CHECK_LOOKBACK_DAYS; back++) {
-        const d = addDays(now, -back);
-        if (weekdayIdx(d) !== c.day) continue;
-        const iso = toISO(d);
+        const iso = toISO(addDays(now, -back));
+        if (!classOn(c, iso)) continue;
         const end = atTime(iso, c.end);
         if (end > now || end.getTime() < c.checkSince || holidayOn(iso)) continue;
         const key = `${c.id}@${iso}`;
@@ -325,7 +343,7 @@
     const now = new Date();
     for (let back = 0; back < CHECK_LOOKBACK_DAYS; back++) {
       const d = addDays(now, -back);
-      if (weekdayIdx(d) === cls.day && atTime(toISO(d), cls.end) <= now) return toISO(d);
+      if (classOn(cls, toISO(d)) && atTime(toISO(d), cls.end) <= now) return toISO(d);
     }
     return todayISO();
   }
@@ -479,7 +497,7 @@
     const d = fromISO(selected);
     const diff = dayDiff(selected);
     const rel = diff === 0 ? "Today · " : diff === 1 ? "Tomorrow · " : diff === -1 ? "Yesterday · " : "";
-    el.dayLabel.textContent = rel + fmtDay.format(d);
+    el.dayLabel.textContent = rel + fmtDay.format(d) + (usesWeeks() ? ` · Week ${weekLetter(selected)}` : "");
 
     const tasks = tasksOn(selected);
     const done = tasks.filter((t) => t.done).length;
@@ -497,7 +515,7 @@
 
     // Classes on this day (none on holidays / days off)
     const holiday = holidayOn(selected);
-    const classes = holiday ? [] : classesOn(weekdayIdx(d));
+    const classes = holiday ? [] : lessonsOn(selected);
     el.dayClasses.hidden = classes.length === 0 && !holiday;
     el.dayClasses.replaceChildren();
     if (holiday) {
@@ -587,9 +605,18 @@
     }
   }
 
+  function renderWeekBar() {
+    el.weekABar.hidden = !usesWeeks();
+    if (el.weekABar.hidden) return;
+    const now = weekLetter(todayISO());
+    el.weekABar.querySelector("strong").textContent = `This week is Week ${now}`;
+    el.weekABar.querySelector("span.muted").textContent = `Next week is Week ${now === "A" ? "B" : "A"}`;
+  }
+
   function renderTimetable() {
     el.pageTitle.textContent = "Timetable";
     el.ttIntro.hidden = state.classes.length > 0;
+    renderWeekBar();
     renderHolidays();
     el.ttList.replaceChildren();
     const todayIdx = weekdayIdx(new Date());
@@ -623,6 +650,7 @@
         b.querySelector(".cc-name").textContent = c.name;
         const meta = [];
         if (c.room) meta.push(c.room);
+        if (c.weeks !== "all") meta.push(`Week ${c.weeks} only`);
         if (c.homeworkCheck) meta.push("📝 Weekly homework");
         const rc = toRecoverCount(c.name);
         if (rc) meta.push(`↺ ${rc} to recover`);
@@ -1089,6 +1117,7 @@
     el.cRoom.value = c ? c.room : "";
     const color = c ? c.color : CLASS_COLORS[state.classes.length % CLASS_COLORS.length];
     el.classForm.elements.ccolor.value = color;
+    el.classForm.elements.cweeks.value = c ? c.weeks : "all";
     el.cHomework.checked = c ? c.homeworkCheck : false;
     el.classDeleteBtn.hidden = !c;
     el.classSheet.showModal();
@@ -1138,7 +1167,10 @@
       room: el.cRoom.value.trim(),
       color: el.classForm.elements.ccolor.value || CLASS_COLORS[0],
       homeworkCheck: el.cHomework.checked,
+      weeks: ["A", "B"].includes(el.classForm.elements.cweeks.value) ? el.classForm.elements.cweeks.value : "all",
     };
+    // The first A/B class decides: the current week is Week A (can be swapped on the Timetable)
+    if (base.weeks !== "all" && !state.weekA) state.weekA = toISO(startOfWeek(new Date()));
     if (editingClassId) {
       const c = state.classes.find((x) => x.id === editingClassId);
       if (c) {
@@ -1384,6 +1416,7 @@
       out[list] = [...byId.values()];
     }
     out.hwAnswered = { ...theirs.hwAnswered, ...mine.hwAnswered };
+    if (mine.weekA || theirs.weekA) out.weekA = mine.weekA || theirs.weekA;
     return { state: out, counts };
   }
 
@@ -1579,7 +1612,7 @@
         const iso = toISO(addDays(new Date(), i));
         if (holidayOn(iso)) continue;
         for (const c of hwClasses) {
-          if (c.day !== weekdayIdx(fromISO(iso)) || state.hwAnswered[`${c.id}@${iso}`]) continue;
+          if (!classOn(c, iso) || state.hwAnswered[`${c.id}@${iso}`]) continue;
           const at = atTime(iso, c.end).getTime();
           if (at <= now + 1000) continue;
           checks.push({
@@ -1824,6 +1857,13 @@
   });
   $("caClose").addEventListener("click", () => el.classActions.close());
 
+  $("swapWeeks").addEventListener("click", () => {
+    const anchor = state.weekA || toISO(startOfWeek(new Date()));
+    state.weekA = toISO(addDays(fromISO(anchor), 7)); // shifts which weeks count as A
+    save();
+    render();
+    toast(`This week is now Week ${weekLetter(todayISO())}`);
+  });
   el.holidayForm.addEventListener("submit", (e) => { e.preventDefault(); saveHolidayFromForm(); });
   $("holidayCancelBtn").addEventListener("click", () => el.holidaySheet.close());
   el.holidayDeleteBtn.addEventListener("click", () => editingHolidayId && deleteHoliday(editingHolidayId));

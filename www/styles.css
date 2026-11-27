@@ -676,3 +676,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .evening-label input:focus-visible + .check-box { outline: 2px solid var(--accent); outline-offset: 2px; }
 .evening-row #eveningTime { width: 120px; flex: none; }
+
+/* Week A / Week B */
+.week-ab {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--accent-soft);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+.week-ab > span { display: flex; flex-direction: column; gap: 2px; }
+.week-ab .mini-btn { background: var(--surface); }
+.weeks-seg input:checked + span { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }

@@ -70,6 +70,10 @@
         <strong>Add your weekly classes</strong>
         <p>Tap <strong>+</strong> to add a class. Tick <em>Weekly homework</em> and after each class Planner will ask whether you got homework.</p>
       </div>
+      <div id="weekABar" class="week-ab" hidden>
+        <span><strong></strong><span class="muted small"></span></span>
+        <button id="swapWeeks" class="mini-btn" type="button">Swap A/B</button>
+      </div>
       <div id="holidayBox" class="holiday-box"></div>
       <div id="ttList"></div>
     </section>
@@ -216,6 +220,15 @@
           <input id="cEnd" type="time" required>
         </label>
       </div>
+
+      <fieldset class="field">
+        <legend>Which weeks</legend>
+        <div class="segmented weeks-seg">
+          <label><input type="radio" name="cweeks" value="all" checked><span>Every week</span></label>
+          <label><input type="radio" name="cweeks" value="A"><span>Week A</span></label>
+          <label><input type="radio" name="cweeks" value="B"><span>Week B</span></label>
+        </div>
+      </fieldset>
 
       <label class="field">
         <span>Room or teacher <em>(optional)</em></span>
