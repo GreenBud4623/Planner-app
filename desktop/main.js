@@ -173,6 +173,22 @@ ipcMain.handle("notif:cancel", (_e, opts) => {
   scheduled = scheduled.filter((n) => !ids.has(Number(n.id)));
 });
 
+// ---------- Automatic backups ----------
+// The page sends the backup text; only files named planner-auto-YYYY-MM-DD.json are written, in one folder.
+const AUTO_NAME = /^planner-auto-\d{4}-\d{2}-\d{2}\.json$/;
+ipcMain.handle("backup:auto", (_e, opts) => {
+  const { name, json, keep } = opts || {};
+  if (typeof name !== "string" || !AUTO_NAME.test(name)) throw new Error("bad backup name");
+  if (typeof json !== "string" || json.length > 20 * 1024 * 1024) throw new Error("bad backup data");
+  const dir = path.join(app.getPath("documents"), "Planner", "Auto backups");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, name), json, "utf8");
+  const keepN = Math.min(Math.max(Number(keep) || 7, 1), 60);
+  const old = fs.readdirSync(dir).filter((f) => AUTO_NAME.test(f)).sort().slice(0, -keepN);
+  old.forEach((f) => { try { fs.unlinkSync(path.join(dir, f)); } catch { /* keep going */ } });
+  return { path: path.join(dir, name) };
+});
+
 // ---------- Start ----------
 function start() {
   const startHidden = process.argv.includes("--hidden");

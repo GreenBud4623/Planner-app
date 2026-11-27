@@ -69,7 +69,16 @@
   // ---------- Storage ----------
   let memoryFallback = null; // used if localStorage is blocked (e.g. private mode)
 
-  function emptyState() { return { tasks: [], classes: [], hwAnswered: {}, holidays: [] }; }
+  function emptyState() { return { tasks: [], classes: [], hwAnswered: {}, holidays: [], grades: [], deleted: {} }; }
+
+  // Lists that are merged item by item when restoring a backup (newest change wins)
+  const SYNC_LISTS = ["tasks", "classes", "holidays", "grades"];
+  const stamp = (x) => (typeof x.updatedAt === "number" ? x.updatedAt : 0);
+  /** Mark an item as changed now (used to pick the newest version when merging backups). */
+  const touch = (x) => { x.updatedAt = Date.now(); return x; };
+  /** Remember that an item was deleted, so merging an older backup doesn't bring it back. */
+  const forget = (id) => { state.deleted[id] = Date.now(); };
+  const unforget = (x) => { delete state.deleted[x.id]; touch(x); };
 
   function load() {
     try {
@@ -93,11 +102,39 @@
       const old = toISO(addDays(new Date(), -90)); // forget holidays that ended long ago
       s.holidays = data.holidays.filter(isValidHoliday).map(normalizeHoliday).filter((h) => h.to >= old);
     }
+    if (data && Array.isArray(data.grades)) s.grades = data.grades.filter(isValidGrade).map(normalizeGrade);
+    if (data && data.deleted && typeof data.deleted === "object") {
+      const cutoff = Date.now() - 180 * 864e5;
+      for (const [k, v] of Object.entries(data.deleted)) if (typeof v === "number" && v > cutoff) s.deleted[k] = v;
+    }
     return s;
   }
 
+  // ---------- Grades ----------
+  const GRADE_KINDS = { test: "Test", oral: "Oral", homework: "Homework", other: "Other" };
+  /** Reads a grade like "9", "9.5" or "9,50". Returns null if it isn't a number. */
+  function parseGrade(v) {
+    const n = parseFloat(String(v == null ? "" : v).trim().replace(",", "."));
+    return Number.isFinite(n) && n >= 0 && n <= 1000 ? n : null;
+  }
+  function isValidGrade(g) { return g && typeof g.id === "string" && parseGrade(g.value) !== null && isISO(g.date); }
+  function normalizeGrade(g) {
+    return {
+      id: g.id,
+      className: typeof g.className === "string" ? g.className.slice(0, 80) : "",
+      value: parseGrade(g.value),
+      kind: GRADE_KINDS[g.kind] ? g.kind : "other",
+      date: g.date,
+      note: typeof g.note === "string" ? g.note.slice(0, 200) : "",
+      createdAt: typeof g.createdAt === "number" ? g.createdAt : Date.now(),
+      updatedAt: typeof g.updatedAt === "number" ? g.updatedAt : (typeof g.createdAt === "number" ? g.createdAt : 0),
+    };
+  }
+
   function isValidHoliday(h) { return h && typeof h.id === "string" && isISO(h.from) && isISO(h.to) && h.from <= h.to; }
-  function normalizeHoliday(h) { return { id: h.id, name: typeof h.name === "string" ? h.name.slice(0, 60) : "", from: h.from, to: h.to }; }
+  function normalizeHoliday(h) {
+    return { id: h.id, name: typeof h.name === "string" ? h.name.slice(0, 60) : "", from: h.from, to: h.to, updatedAt: typeof h.updatedAt === "number" ? h.updatedAt : 0 };
+  }
 
   function save() {
     try {
@@ -136,6 +173,7 @@
       missedDate: type === "recover" && isISO(t.missedDate) ? t.missedDate : "",
       // for "test": the mark you got, written after the test
       grade: type === "test" && typeof t.grade === "string" ? t.grade.slice(0, 20) : "",
+      updatedAt: typeof t.updatedAt === "number" ? t.updatedAt : (typeof t.createdAt === "number" ? t.createdAt : 0),
     };
   }
 
@@ -156,6 +194,7 @@
       homeworkCheck: !!c.homeworkCheck,
       checkSince: typeof c.checkSince === "number" ? c.checkSince : Date.now(),
       createdAt: typeof c.createdAt === "number" ? c.createdAt : Date.now(),
+      updatedAt: typeof c.updatedAt === "number" ? c.updatedAt : (typeof c.createdAt === "number" ? c.createdAt : 0),
     };
   }
 
@@ -188,6 +227,8 @@
     fMissed: $("fMissed"), missedField: $("missedField"),
     fGrade: $("fGrade"), gradeField: $("gradeField"), prioField: $("prioField"), fNotesLabel: $("fNotesLabel"),
     testSections: $("testSections"), testBadge: $("testBadge"),
+    restoreSheet: $("restoreSheet"), restoreInfo: $("restoreInfo"),
+    autoRow: $("autoRow"), autoToggle: $("autoToggle"), autoStatus: $("autoStatus"),
     holidayBox: $("holidayBox"), holidaySheet: $("holidaySheet"), holidayForm: $("holidayForm"), holidayTitle: $("holidayTitle"),
     hName: $("hName"), hFrom: $("hFrom"), hTo: $("hTo"), holidayDeleteBtn: $("holidayDeleteBtn"),
     classActions: $("classActions"), caTitle: $("caTitle"), caWhen: $("caWhen"),
@@ -198,7 +239,7 @@
     hwSheet: $("hwSheet"), hwForm: $("hwForm"), hwRows: $("hwRows"),
     menu: $("menuSheet"), importFile: $("importFile"), toast: $("toast"),
   };
-  const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.classActions, el.holidaySheet, el.menu];
+  const dialogs = () => [el.sheet, el.classSheet, el.hwSheet, el.classActions, el.holidaySheet, el.restoreSheet, el.menu];
   const anyDialogOpen = () => dialogs().some((d) => d.open);
 
   // ---------- Classes helpers ----------
@@ -705,6 +746,7 @@
     const t = state.tasks.find((x) => x.id === id);
     if (!t) return;
     t.done = !t.done;
+    touch(t);
     save();
     render();
     if (t.done) {
@@ -816,7 +858,7 @@
     };
     if (editingId) {
       const t = state.tasks.find((x) => x.id === editingId);
-      if (t) Object.assign(t, data);
+      if (t) touch(Object.assign(t, data));
     } else {
       state.tasks.push(normalizeTask({ ...data, id: newId(), done: false, createdAt: Date.now() }));
       // Missed this lesson, or added its homework from the class: don't ask "What homework did you get?" about it
@@ -836,16 +878,17 @@
     const idx = state.tasks.findIndex((x) => x.id === id);
     if (idx < 0) return;
     const [removed] = state.tasks.splice(idx, 1);
+    forget(removed.id);
     save();
     closeTaskSheet();
     render();
-    toast("Deleted", "Undo", () => { state.tasks.push(removed); save(); render(); });
+    toast("Deleted", "Undo", () => { unforget(removed); state.tasks.push(removed); save(); render(); });
   }
 
   function moveOverdueToToday() {
     const today = todayISO();
     let n = 0;
-    state.tasks.forEach((t) => { if (t.type === "task" && !t.done && t.date && t.date < today) { t.date = today; n++; } });
+    state.tasks.forEach((t) => { if (t.type === "task" && !t.done && t.date && t.date < today) { t.date = today; touch(t); n++; } });
     save();
     render();
     toast(`Moved ${n} task${n > 1 ? "s" : ""} to today`);
@@ -946,9 +989,12 @@
       if (c) {
         const oldName = c.name;
         if (base.homeworkCheck && !c.homeworkCheck) c.checkSince = Date.now();
-        Object.assign(c, base, { day: days[0] });
-        // keep homework linked when a class is renamed
-        if (oldName !== name) state.tasks.forEach((t) => { if (t.className === oldName) t.className = name; });
+        touch(Object.assign(c, base, { day: days[0] }));
+        // keep homework, tests and grades linked when a class is renamed
+        if (oldName !== name) {
+          state.tasks.forEach((t) => { if (t.className === oldName) touch(Object.assign(t, { className: name })); });
+          state.grades.forEach((g) => { if (g.className === oldName) touch(Object.assign(g, { className: name })); });
+        }
       }
     } else {
       for (const day of days) {
@@ -968,10 +1014,11 @@
     const idx = state.classes.findIndex((x) => x.id === id);
     if (idx < 0) return;
     const [removed] = state.classes.splice(idx, 1);
+    forget(removed.id);
     save();
     closeClassSheet();
     render();
-    toast("Class deleted", "Undo", () => { state.classes.push(removed); save(); render(); });
+    toast("Class deleted", "Undo", () => { unforget(removed); state.classes.push(removed); save(); render(); });
   }
 
   // ---------- Holiday / day-off sheet ----------
@@ -995,9 +1042,9 @@
     const data = { name: el.hName.value.trim().slice(0, 60), from, to };
     if (editingHolidayId) {
       const h = state.holidays.find((x) => x.id === editingHolidayId);
-      if (h) Object.assign(h, data);
+      if (h) touch(Object.assign(h, data));
     } else {
-      state.holidays.push({ id: newId(), ...data });
+      state.holidays.push(touch({ id: newId(), ...data }));
     }
     save();
     el.holidaySheet.close();
@@ -1010,10 +1057,11 @@
     const idx = state.holidays.findIndex((x) => x.id === id);
     if (idx < 0) return;
     const [removed] = state.holidays.splice(idx, 1);
+    forget(removed.id);
     save();
     el.holidaySheet.close();
     render();
-    toast("Holiday removed", "Undo", () => { state.holidays.push(removed); save(); render(); });
+    toast("Holiday removed", "Undo", () => { unforget(removed); state.holidays.push(removed); save(); render(); });
   }
 
   // ---------- Homework check-in ("What homework did you get?") ----------
@@ -1115,7 +1163,7 @@
   // ---------- Backup ----------
   const backupName = () => `planner-backup-${todayISO()}.json`;
   const backupJSON = () =>
-    JSON.stringify({ app: "planner", version: 5, exportedAt: new Date().toISOString(), ...state }, null, 2);
+    JSON.stringify({ app: "planner", version: 6, exportedAt: new Date().toISOString(), ...state }, null, 2);
 
   async function exportBackup() {
     if (Files) {
@@ -1155,28 +1203,49 @@
     }
   }
 
+  /**
+   * Merges another copy of the data into ours, item by item: the most recently changed version of each
+   * task, class, holiday and grade wins, and things deleted later than their last change stay deleted.
+   */
+  function mergeStates(mine, theirs) {
+    const out = emptyState();
+    const counts = { added: 0, updated: 0, removed: 0 };
+    for (const [k, v] of [...Object.entries(mine.deleted), ...Object.entries(theirs.deleted)]) {
+      out.deleted[k] = Math.max(out.deleted[k] || 0, v);
+    }
+    for (const list of SYNC_LISTS) {
+      const byId = new Map(mine[list].map((x) => [x.id, x]));
+      for (const x of theirs[list]) {
+        const have = byId.get(x.id);
+        if (!have) { byId.set(x.id, x); counts.added++; }
+        else if (stamp(x) > stamp(have)) { byId.set(x.id, x); counts.updated++; }
+      }
+      for (const [id, x] of byId) {
+        if (out.deleted[id] && out.deleted[id] >= stamp(x)) {
+          byId.delete(id);
+          if (mine[list].some((m) => m.id === id)) counts.removed++; else counts.added--;
+        }
+      }
+      out[list] = [...byId.values()];
+    }
+    out.hwAnswered = { ...theirs.hwAnswered, ...mine.hwAnswered };
+    return { state: out, counts };
+  }
+
+  let pendingRestore = null;
   function importBackup(file) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const data = JSON.parse(reader.result);
         if (!data || !Array.isArray(data.tasks)) throw new Error("bad file");
-        const incoming = normalizeState(data);
-        const haveT = new Set(state.tasks.map((t) => t.id));
-        const haveC = new Set(state.classes.map((c) => c.id));
-        const newTasks = incoming.tasks.filter((t) => !haveT.has(t.id));
-        const newClasses = incoming.classes.filter((c) => !haveC.has(c.id));
-        state.tasks.push(...newTasks);
-        state.classes.push(...newClasses);
-        Object.assign(state.hwAnswered, incoming.hwAnswered);
-        const haveH = new Set(state.holidays.map((h) => h.id));
-        state.holidays.push(...incoming.holidays.filter((h) => !haveH.has(h.id)));
-        save();
+        pendingRestore = normalizeState(data);
+        const when = data.exportedAt ? new Date(data.exportedAt) : null;
+        const n = (k, word) => `${pendingRestore[k].length} ${word}${pendingRestore[k].length === 1 ? "" : "s"}`;
+        el.restoreInfo.textContent = `${when && !isNaN(when) ? "Saved " + fmtShort.format(when) + " · " : ""}` +
+          [n("tasks", "item"), n("classes", "class"), n("grades", "grade")].join(" · ");
         el.menu.close();
-        render();
-        const bits = [`${newTasks.length} task${newTasks.length === 1 ? "" : "s"}`];
-        if (newClasses.length) bits.push(`${newClasses.length} class${newClasses.length === 1 ? "" : "es"}`);
-        toast(`Restored ${bits.join(" and ")}`);
+        el.restoreSheet.showModal();
       } catch {
         toast("That file isn't a Planner backup");
       }
@@ -1184,11 +1253,87 @@
     reader.readAsText(file);
   }
 
+  function applyRestore(mode) {
+    if (!pendingRestore) return;
+    const before = JSON.stringify(state);
+    let msg;
+    if (mode === "replace") {
+      state = pendingRestore;
+      msg = "Replaced with the backup";
+    } else {
+      const { state: merged, counts } = mergeStates(state, pendingRestore);
+      state = merged;
+      const bits = [];
+      if (counts.added) bits.push(`${counts.added} new`);
+      if (counts.updated) bits.push(`${counts.updated} updated`);
+      if (counts.removed) bits.push(`${counts.removed} removed`);
+      msg = bits.length ? `Restored: ${bits.join(", ")}` : "Nothing new in that backup";
+    }
+    pendingRestore = null;
+    el.restoreSheet.close();
+    save();
+    render();
+    toast(msg, "Undo", () => { state = normalizeState(JSON.parse(before)); save(); render(); });
+  }
+
+  // ---------- Automatic backups (Android and Windows apps) ----------
+  // Once a day, a copy is saved to Documents › Planner › Auto backups, keeping the last 7.
+  const SETTINGS_KEY = "planner.settings";
+  const AUTO_DIR = "Planner/Auto backups";
+  const AUTO_KEEP = 7;
+  const AUTO_FILE = /^planner-auto-\d{4}-\d{2}-\d{2}\.json$/;
+  const canAutoBackup = () => !!(Files || (Desktop && Desktop.backup));
+  function loadSettings() {
+    try { return Object.assign({ autoBackup: true, lastAutoBackup: 0 }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); }
+    catch { return { autoBackup: true, lastAutoBackup: 0 }; }
+  }
+  function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* not important */ } }
+  let settings = loadSettings();
+
+  async function autoBackup(force = false) {
+    if (!canAutoBackup() || !settings.autoBackup) return false;
+    if (!state.tasks.length && !state.classes.length && !state.grades.length) return false;
+    if (!force && Date.now() - settings.lastAutoBackup < 20 * 3600e3) return false; // about once a day
+    const name = `planner-auto-${todayISO()}.json`;
+    try {
+      if (Files) {
+        // On Android 10 and older this needs storage permission: only back up once it was given (e.g. by a manual backup)
+        const perm = await Files.checkPermissions();
+        if (perm.publicStorage !== "granted") return false;
+        await Files.writeFile({ path: `${AUTO_DIR}/${name}`, data: backupJSON(), directory: "DOCUMENTS", encoding: "utf8", recursive: true });
+        const dir = await Files.readdir({ path: AUTO_DIR, directory: "DOCUMENTS" });
+        const names = (dir.files || []).map((f) => (typeof f === "string" ? f : f.name)).filter((n) => AUTO_FILE.test(n)).sort();
+        for (const old of names.slice(0, -AUTO_KEEP)) {
+          await Files.deleteFile({ path: `${AUTO_DIR}/${old}`, directory: "DOCUMENTS" }).catch(() => {});
+        }
+      } else {
+        await Desktop.backup.writeAuto(name, backupJSON(), AUTO_KEEP);
+      }
+      settings.lastAutoBackup = Date.now();
+      saveSettings();
+      renderBackupStatus();
+      return true;
+    } catch (e) {
+      console.warn("Automatic backup failed", e);
+      return false;
+    }
+  }
+
+  function renderBackupStatus() {
+    el.autoRow.hidden = !canAutoBackup();
+    el.autoToggle.checked = !!settings.autoBackup;
+    const last = settings.lastAutoBackup;
+    el.autoStatus.textContent = !settings.autoBackup ? "Off — turn it on so you can't lose your planner"
+      : last ? `Last one: ${relDay(toISO(new Date(last)))} · ${isDesktop ? "Documents\\Planner\\Auto backups" : "Documents › Planner › Auto backups"}`
+      : "Saves a copy once a day and keeps the last 7";
+  }
+
   function clearCompleted() {
     const kept = state.tasks.filter((t) => !t.done || t.type === "test"); // tests keep their grades
     const removed = state.tasks.length - kept.length;
     if (!removed) { toast("No completed tasks"); return; }
     if (!confirm(`Delete ${removed} completed item${removed > 1 ? "s" : ""}?`)) return;
+    state.tasks.filter((t) => !kept.includes(t)).forEach((t) => forget(t.id));
     state.tasks = kept;
     save();
     el.menu.close();
@@ -1503,7 +1648,18 @@
   $("hwLaterBtn").addEventListener("click", snoozeHomeworkCheck);
   el.hwSheet.addEventListener("cancel", (e) => { e.preventDefault(); snoozeHomeworkCheck(); });
 
-  $("menuBtn").addEventListener("click", () => el.menu.showModal());
+  $("menuBtn").addEventListener("click", () => { renderBackupStatus(); el.menu.showModal(); });
+  el.autoToggle.addEventListener("change", () => {
+    settings.autoBackup = el.autoToggle.checked;
+    saveSettings();
+    renderBackupStatus();
+    if (settings.autoBackup) autoBackup(true).then((ok) => ok && toast("Backup saved"));
+  });
+  $("restoreMerge").addEventListener("click", () => applyRestore("merge"));
+  $("restoreReplace").addEventListener("click", () => {
+    if (confirm("Replace everything on this device with the backup? (You can undo right after.)")) applyRestore("replace");
+  });
+  $("restoreCancel").addEventListener("click", () => { pendingRestore = null; el.restoreSheet.close(); });
   $("closeMenu").addEventListener("click", () => el.menu.close());
   $("exportBtn").addEventListener("click", exportBackup);
   $("importBtn").addEventListener("click", () => el.importFile.click());
@@ -1547,6 +1703,7 @@
     hwSnoozed = new Set();
     render();
     maybeAskHomework();
+    autoBackup();
   }
   let wasHidden = false;
   document.addEventListener("visibilitychange", () => {
@@ -1578,4 +1735,5 @@
   setupDesktop();
   render();
   setTimeout(maybeAskHomework, 400);
+  setTimeout(() => autoBackup(), 3000);
 })();

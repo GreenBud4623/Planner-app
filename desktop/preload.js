@@ -7,6 +7,10 @@ const noop = () => Promise.resolve();
 
 contextBridge.exposeInMainWorld("plannerDesktop", {
   platform: "windows",
+  // Daily automatic backup into Documents\Planner\Auto backups (the main process checks the file name)
+  backup: {
+    writeAuto: (name, json, keep) => ipcRenderer.invoke("backup:auto", { name, json, keep }),
+  },
   notifications: {
     checkPermissions: granted,
     requestPermissions: granted,

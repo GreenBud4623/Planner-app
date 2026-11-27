@@ -316,7 +316,15 @@
   <dialog id="menuSheet" class="sheet">
     <div class="grabber" aria-hidden="true"></div>
     <h3>Your data</h3>
-    <p class="muted small">Everything is saved only on this phone. Nothing is sent anywhere. Make a backup file now and then so you don't lose your tasks.</p>
+    <p class="muted small">Everything is saved only on this device. Nothing is sent anywhere.</p>
+    <label id="autoRow" class="check-row auto-row" hidden>
+      <input id="autoToggle" type="checkbox">
+      <span class="check-box" aria-hidden="true"></span>
+      <span>
+        <strong>Automatic daily backup</strong>
+        <span id="autoStatus" class="muted small"></span>
+      </span>
+    </label>
     <div class="menu-list">
       <button id="exportBtn" class="menu-item" type="button">Save a backup file</button>
       <button id="shareBtn" class="menu-item" type="button" hidden>Send a backup (Drive, email…)</button>
@@ -325,6 +333,24 @@
       <button id="closeMenu" class="menu-item muted-item" type="button">Close</button>
     </div>
     <input id="importFile" type="file" accept="application/json,.json" hidden>
+  </dialog>
+
+  <!-- Restore: merge or replace -->
+  <dialog id="restoreSheet" class="sheet">
+    <div class="grabber" aria-hidden="true"></div>
+    <h3>Restore this backup?</h3>
+    <p id="restoreInfo" class="muted small"></p>
+    <div class="menu-list">
+      <button id="restoreMerge" class="menu-item" type="button">
+        <strong>Merge with what's here</strong>
+        <span class="muted small menu-sub">Adds what's missing and keeps the newest version of everything. Things you deleted stay deleted.</span>
+      </button>
+      <button id="restoreReplace" class="menu-item" type="button">
+        <strong>Replace everything</strong>
+        <span class="muted small menu-sub">Makes this device exactly like the backup, e.g. after losing data.</span>
+      </button>
+      <button id="restoreCancel" class="menu-item muted-item" type="button">Cancel</button>
+    </div>
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

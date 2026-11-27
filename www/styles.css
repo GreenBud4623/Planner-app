@@ -618,3 +618,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .hr-name { font-weight: 600; }
 .quick-ranges { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
 .day.is-holiday:not(.is-selected) { outline: 1.5px dashed var(--accent); outline-offset: -3px; }
+
+/* ===== Backups ===== */
+.auto-row { margin: 10px 0 4px; }
+.menu-item .menu-sub { display: block; font-weight: 400; margin-top: 2px; }
